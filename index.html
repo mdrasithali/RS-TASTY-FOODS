@@ -715,7 +715,6 @@
             <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices.</p>
             <div class="cloud-actions">
               <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
-              <div id="driveWebViewNote" class="cloud-note" style="display:none;margin-top:8px;">In the APK, Google authorization opens the GitHub Pages web version in your browser because Google blocks OAuth inside embedded WebViews.</div>
               <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
             </div>
             <button class="btn-danger-text" id="driveDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect Google Drive</button>
@@ -1185,30 +1184,6 @@ let gTokenExpiry = 0;
 function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
 function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
 
-// ---------- GitHub Pages + WebToAPK compatibility ----------
-const WEB_APP_URL = 'https://mdrasithali.github.io/RS-TASTY-FOODS/';
-
-function isAndroidWebView(){
-  const ua = navigator.userAgent || '';
-  return /Android/i.test(ua) && (/\bwv\b/i.test(ua) || /; wv\)/i.test(ua));
-}
-
-function openWebVersionForGoogle(){
-  // WebToAPK can be configured to open off-domain URLs in the device browser.
-  // Use a normal HTTPS link to the public GitHub Pages app, rather than sending
-  // the Google authorization request from inside the WebView.
-  const url = WEB_APP_URL + '?google_drive=1';
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_blank';
-  a.rel = 'noopener noreferrer';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  showToast('Opening the web version for Google Drive sign-in…');
-}
-
 function initGoogleAuth(){
   if(!window.google || !google.accounts || !google.accounts.oauth2){
     setTimeout(initGoogleAuth, 400);
@@ -1240,27 +1215,50 @@ function ensureDriveToken(interactive){
   });
 }
 
+// OAuth redirect URI: must be added as an "Authorized redirect URI" for this
+// client ID in Google Cloud Console > APIs & Services > Credentials.
+const OAUTH_REDIRECT_URI = 'https://mdrasithali.github.io/RS-TASTY-FOODS/oauth-callback.html';
+// Custom scheme registered in the app builder (Deep Links & Custom Actions).
+// oauth-callback.html hands the token to this scheme so the app regains
+// control after Chrome finishes the Google sign-in.
+const APP_CUSTOM_SCHEME = 'rstastyfoods';
+
 function signInGoogleDrive(){
-  if(isAndroidWebView()){
-    openWebVersionForGoogle();
-    return;
-  }
-
-  if(!gTokenClient){
-    showToast('Google sign-in is still loading, try again in a moment');
-    return;
-  }
-
-  ensureDriveToken(true).then(async (token)=>{
-    if(token){
-      renderDriveStatus('connected');
-      showToast('Google Drive connected');
-      await syncWithCloud();
-    }else{
-      renderDriveStatus('error');
-      showToast('Google sign-in was cancelled or blocked');
-    }
+  // Full-page redirect (not a popup) so an "open external links in browser"
+  // style app setting can hand this specific navigation off to Chrome, where
+  // Google allows the sign-in flow (it blocks sign-in inside a plain WebView).
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: OAUTH_REDIRECT_URI,
+    response_type: 'token',
+    scope: DRIVE_SCOPE,
+    include_granted_scopes: 'true',
+    prompt: 'consent'
   });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+// Called on startup in case the app was just reopened via the
+// rstastyfoods://oauth-callback deep link (or, as a fallback, in case the
+// WebView simply reloaded this page with the token still in the URL).
+function checkIncomingGoogleToken(){
+  const raw = (window.location.hash && window.location.hash.length > 1)
+    ? window.location.hash.substring(1)
+    : window.location.search.substring(1);
+  if(!raw) return;
+  const params = new URLSearchParams(raw);
+  const token = params.get('access_token');
+  if(!token) return;
+  gAccessToken = token;
+  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+  gTokenExpiry = Date.now() + (expiresIn * 1000 - 60000);
+  localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
+  initDriveUI();
+  renderDriveStatus('connected');
+  showToast('Google Drive connected');
+  syncWithCloud();
+  // Clean the token out of the visible URL so a refresh doesn't reprocess it.
+  history.replaceState(null, '', window.location.pathname);
 }
 
 function disconnectGoogleDrive(){
@@ -1351,13 +1349,7 @@ function renderDriveStatus(state){
   text.textContent = last ? `Cloud: synced ${timeAgo(last)}` : 'Cloud: connected';
 }
 
-function updateDriveWebViewNote(){
-  const note = document.getElementById('driveWebViewNote');
-  if(note) note.style.display = isAndroidWebView() ? '' : 'none';
-}
-
 function initDriveUI(){
-  updateDriveWebViewNote();
   if(isDriveConnected()){
     document.getElementById('driveSignInBtn').textContent = 'Re-connect Google';
     document.getElementById('driveSyncNowBtn').style.display = '';
@@ -1963,6 +1955,7 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
   renderAll();
   initDriveUI();
   initGoogleAuth();
+  checkIncomingGoogleToken();
   if(isDriveConnected()) await syncWithCloud();
 })();
 </script>

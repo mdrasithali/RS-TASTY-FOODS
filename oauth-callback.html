@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signing you in…</title>
+<style>
+  body{font-family:sans-serif;background:#f3f4ea;color:#2f3a2a;display:flex;
+       align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px;}
+  p{max-width:320px;}
+</style>
+</head>
+<body>
+<p id="msg">Finishing sign-in… you can return to the app.</p>
+<script>
+  // Google redirects here with the token in the URL fragment, e.g.
+  // #access_token=...&token_type=Bearer&expires_in=3599&scope=...
+  // Fragments are not always preserved reliably when handed to a custom
+  // scheme, so we move it into a query string, which is.
+  var raw = window.location.hash.substring(1);
+
+  if (raw && raw.indexOf('access_token=') !== -1) {
+    var target = 'rstastyfoods://oauth-callback?' + raw;
+    window.location.href = target;
+
+    // Fallback message in case the OS doesn't auto-return to the app
+    // (e.g. if this page was opened in a plain browser tab instead of
+    // inside the app's flow).
+    setTimeout(function () {
+      document.getElementById('msg').textContent =
+        'Signed in with Google. If you are not returned to the app automatically, please reopen it.';
+    }, 1500);
+  } else {
+    document.getElementById('msg').textContent =
+      'Sign-in did not complete. Please close this page and try again in the app.';
+  }
+</script>
+</body>
+</html>
