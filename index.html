@@ -715,6 +715,7 @@
             <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices.</p>
             <div class="cloud-actions">
               <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
+              <div id="driveWebViewNote" class="cloud-note" style="display:none;margin-top:8px;">Google sign-in opens in a supported browser. If this app is running inside WebToAPK, use Chrome to connect Google Drive.</div>
               <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
             </div>
             <button class="btn-danger-text" id="driveDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect Google Drive</button>
@@ -1184,6 +1185,27 @@ let gTokenExpiry = 0;
 function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
 function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
 
+// ---------- WebToAPK / Android WebView compatibility ----------
+function isAndroidWebView(){
+  const ua = navigator.userAgent || '';
+  return /Android/i.test(ua) && (
+    /\bwv\b/i.test(ua) ||
+    /; wv\)/i.test(ua) ||
+    /Version\/4\.0/i.test(ua)
+  );
+}
+
+function isAndroidDevice(){
+  return /Android/i.test(navigator.userAgent || '');
+}
+
+// Google OAuth must run in a supported browser context.
+// WebToAPK wraps this page in a WebView, so expose a clear fallback
+// instead of leaving the user with a silent/blocked OAuth popup.
+function showGoogleWebViewHelp(){
+  showToast('Google sign-in needs Chrome/browser. Open this page in Chrome to connect Google Drive.');
+}
+
 function initGoogleAuth(){
   if(!window.google || !google.accounts || !google.accounts.oauth2){
     setTimeout(initGoogleAuth, 400);
@@ -1216,7 +1238,18 @@ function ensureDriveToken(interactive){
 }
 
 function signInGoogleDrive(){
-  if(!gTokenClient){ showToast('Google sign-in is still loading, try again in a moment'); return; }
+  // WebToAPK uses an Android WebView. Do not attempt the GIS popup/token
+  // request inside the embedded WebView; Google OAuth can block this context.
+  if(isAndroidWebView()){
+    showGoogleWebViewHelp();
+    return;
+  }
+
+  if(!gTokenClient){
+    showToast('Google sign-in is still loading, try again in a moment');
+    return;
+  }
+
   ensureDriveToken(true).then(async (token)=>{
     if(token){
       renderDriveStatus('connected');
@@ -1317,7 +1350,13 @@ function renderDriveStatus(state){
   text.textContent = last ? `Cloud: synced ${timeAgo(last)}` : 'Cloud: connected';
 }
 
+function updateDriveWebViewNote(){
+  const note = document.getElementById('driveWebViewNote');
+  if(note) note.style.display = isAndroidWebView() ? '' : 'none';
+}
+
 function initDriveUI(){
+  updateDriveWebViewNote();
   if(isDriveConnected()){
     document.getElementById('driveSignInBtn').textContent = 'Re-connect Google';
     document.getElementById('driveSyncNowBtn').style.display = '';
