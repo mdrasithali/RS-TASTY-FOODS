@@ -715,7 +715,7 @@
             <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices.</p>
             <div class="cloud-actions">
               <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
-              <div id="driveWebViewNote" class="cloud-note" style="display:none;margin-top:8px;">Google sign-in opens in a supported browser. If this app is running inside WebToAPK, use Chrome to connect Google Drive.</div>
+              <div id="driveWebViewNote" class="cloud-note" style="display:none;margin-top:8px;">In the APK, Google authorization opens the GitHub Pages web version in your browser because Google blocks OAuth inside embedded WebViews.</div>
               <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
             </div>
             <button class="btn-danger-text" id="driveDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect Google Drive</button>
@@ -1185,25 +1185,28 @@ let gTokenExpiry = 0;
 function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
 function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
 
-// ---------- WebToAPK / Android WebView compatibility ----------
+// ---------- GitHub Pages + WebToAPK compatibility ----------
+const WEB_APP_URL = 'https://mdrasithali.github.io/RS-TASTY-FOODS/';
+
 function isAndroidWebView(){
   const ua = navigator.userAgent || '';
-  return /Android/i.test(ua) && (
-    /\bwv\b/i.test(ua) ||
-    /; wv\)/i.test(ua) ||
-    /Version\/4\.0/i.test(ua)
-  );
+  return /Android/i.test(ua) && (/\bwv\b/i.test(ua) || /; wv\)/i.test(ua));
 }
 
-function isAndroidDevice(){
-  return /Android/i.test(navigator.userAgent || '');
-}
+function openWebVersionForGoogle(){
+  // WebToAPK can be configured to open off-domain URLs in the device browser.
+  // Use a normal HTTPS link to the public GitHub Pages app, rather than sending
+  // the Google authorization request from inside the WebView.
+  const url = WEB_APP_URL + '?google_drive=1';
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 
-// Google OAuth must run in a supported browser context.
-// WebToAPK wraps this page in a WebView, so expose a clear fallback
-// instead of leaving the user with a silent/blocked OAuth popup.
-function showGoogleWebViewHelp(){
-  showToast('Google sign-in needs Chrome/browser. Open this page in Chrome to connect Google Drive.');
+  showToast('Opening the web version for Google Drive sign-in…');
 }
 
 function initGoogleAuth(){
@@ -1238,10 +1241,8 @@ function ensureDriveToken(interactive){
 }
 
 function signInGoogleDrive(){
-  // WebToAPK uses an Android WebView. Do not attempt the GIS popup/token
-  // request inside the embedded WebView; Google OAuth can block this context.
   if(isAndroidWebView()){
-    showGoogleWebViewHelp();
+    openWebVersionForGoogle();
     return;
   }
 
