@@ -637,6 +637,7 @@
 </style>
 </head>
 <body>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <div class="wrap">
   <header>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
@@ -663,6 +664,13 @@
               <button class="btn btn-ghost" id="cloudSyncNowBtn" type="button" style="display:none;">Sync now</button>
             </div>
             <button class="btn-danger-text" id="cloudDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect cloud sync</button>
+            <hr style="border:none; border-top:1px solid var(--line); margin:14px 0;">
+            <p class="cloud-note" style="margin-bottom:8px;"><strong id="driveStatusText">Google Drive: not connected</strong></p>
+            <div class="cloud-actions">
+              <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
+              <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
+            </div>
+            <button class="btn-danger-text" id="driveDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect Google Drive</button>
           </div>
         </div>
         <div class="note" id="saveHint" style="margin:0; text-align:right; max-width:260px;">Changes save automatically on this device.</div>
@@ -1063,9 +1071,9 @@ function getLocalUpdatedAt(){ return parseInt(localStorage.getItem(LOCAL_UPDATED
 function getLastSyncedAt(){ return parseInt(localStorage.getItem(CLOUD_LAST_SYNC_KEY) || '0', 10); }
 
 function scheduleCloudSync(){
-  if(!getCloudConfig()) return;
+  if(!getCloudConfig() && !isDriveConnected()) return;
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(()=>{ pushToCloud(); }, 1200);
+  cloudSyncTimer = setTimeout(()=>{ pushToCloud(); pushToDrive(); }, 1200);
 }
 
 async function cloudRequest(method, body){
@@ -1106,19 +1114,29 @@ async function pullFromCloud(){
   }catch(e){ return null; }
 }
 
-// Compares whichever of local vs cloud changed more recently and keeps
-// that version, then makes sure the other side matches it.
+// Compares local vs every configured cloud backend (JSONBin, Google Drive)
+// and keeps whichever changed most recently, then pushes that version back
+// out to any backend that was lagging behind.
 async function syncWithCloud(){
-  if(!getCloudConfig() || !navigator.onLine){ renderCloudStatus(); return; }
-  renderCloudStatus('syncing');
-  const remote = await pullFromCloud();
-  if(!remote){ await pushToCloud(); return; }
-  const remoteUpdatedAt = remote.updatedAt || 0;
-  const localUpdatedAt = getLocalUpdatedAt();
-  if(remoteUpdatedAt > localUpdatedAt){
-    products = remote.products || products;
-    sales = remote.sales || sales;
-    customers = remote.customers || customers;
+  const jsonbinCfg = getCloudConfig();
+  const driveOn = isDriveConnected();
+  if((!jsonbinCfg && !driveOn) || !navigator.onLine){ renderCloudStatus(); renderDriveStatus(); return; }
+  renderCloudStatus('syncing'); renderDriveStatus('syncing');
+  const candidates = [{ source:'local', updatedAt:getLocalUpdatedAt(), data:{products,sales,customers} }];
+  if(jsonbinCfg){
+    const r = await pullFromCloud();
+    if(r) candidates.push({ source:'jsonbin', updatedAt:r.updatedAt||0, data:r });
+  }
+  if(driveOn){
+    const r = await pullFromDrive();
+    if(r) candidates.push({ source:'drive', updatedAt:r.updatedAt||0, data:r });
+  }
+  candidates.sort((a,b)=>b.updatedAt-a.updatedAt);
+  const winner = candidates[0];
+  if(winner.source !== 'local'){
+    products = winner.data.products || products;
+    sales = winner.data.sales || sales;
+    customers = winner.data.customers || customers;
     sales.forEach(s=>{
       if(typeof s.customerId === 'undefined') s.customerId = '';
       if(typeof s.paid === 'undefined') s.paid = true;
@@ -1126,14 +1144,12 @@ async function syncWithCloud(){
     await saveProducts(false);
     await saveSales(false);
     await saveCustomers(false);
-    localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteUpdatedAt));
-    localStorage.setItem(CLOUD_LAST_SYNC_KEY, String(Date.now()));
-    renderCloudStatus('synced');
+    localStorage.setItem(LOCAL_UPDATED_KEY, String(winner.updatedAt));
     renderAll();
-    showToast('Pulled latest data from the cloud');
-  }else{
-    await pushToCloud();
+    showToast('Pulled latest data from '+(winner.source==='drive' ? 'Google Drive' : 'the cloud'));
   }
+  if(jsonbinCfg) await pushToCloud();
+  if(driveOn) await pushToDrive();
 }
 
 function timeAgo(ts){
@@ -1209,9 +1225,179 @@ document.getElementById('cloudDisconnectBtn').addEventListener('click', ()=>{
   renderCloudStatus();
   showToast('Cloud sync disconnected');
 });
-window.addEventListener('online', ()=>{ renderCloudStatus(); syncWithCloud(); });
-window.addEventListener('offline', ()=>{ renderCloudStatus(); });
+window.addEventListener('online', ()=>{ renderCloudStatus(); renderDriveStatus(); syncWithCloud(); });
+window.addEventListener('offline', ()=>{ renderCloudStatus(); renderDriveStatus(); });
 
+// ---------- Cloud sync (Google Drive) ----------
+// Stores one JSON file in the app's private Drive "appDataFolder" (a hidden
+// space only this app can see - it does not show up in the user's normal
+// Drive file list). Uses Google Identity Services for sign-in; the access
+// token lives only in memory and is silently re-requested as needed, so
+// nothing sensitive is written to localStorage besides a "connected" flag
+// and the Drive file's ID.
+const GOOGLE_CLIENT_ID = '1006084953887-ksp602ec26n5a06ekiqboqtv0lvaib00.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_CONNECTED_KEY = 'ledger:driveConnected';
+const DRIVE_FILE_KEY = 'ledger:driveFileId';
+const DRIVE_LAST_SYNC_KEY = 'ledger:driveLastSynced';
+const DRIVE_FILE_NAME = 'rs-tasty-foods-data.json';
+let gTokenClient = null;
+let gAccessToken = null;
+let gTokenExpiry = 0;
+
+function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
+function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
+
+function initGoogleAuth(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    setTimeout(initGoogleAuth, 400);
+    return;
+  }
+  gTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: ()=>{}
+  });
+}
+
+function ensureDriveToken(interactive){
+  return new Promise((resolve)=>{
+    if(gAccessToken && Date.now() < gTokenExpiry){ resolve(gAccessToken); return; }
+    if(!gTokenClient){ resolve(null); return; }
+    gTokenClient.callback = (resp)=>{
+      if(resp && resp.access_token){
+        gAccessToken = resp.access_token;
+        gTokenExpiry = Date.now() + ((resp.expires_in||3600)*1000 - 60000);
+        localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
+        resolve(gAccessToken);
+      }else{
+        resolve(null);
+      }
+    };
+    gTokenClient.error_callback = ()=>resolve(null);
+    gTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+  });
+}
+
+function signInGoogleDrive(){
+  if(!gTokenClient){ showToast('Google sign-in is still loading, try again in a moment'); return; }
+  ensureDriveToken(true).then(async (token)=>{
+    if(token){
+      renderDriveStatus('connected');
+      showToast('Google Drive connected');
+      await syncWithCloud();
+    }else{
+      renderDriveStatus('error');
+      showToast('Google sign-in was cancelled or blocked');
+    }
+  });
+}
+
+function disconnectGoogleDrive(){
+  if(gAccessToken && window.google) google.accounts.oauth2.revoke(gAccessToken, ()=>{});
+  gAccessToken = null; gTokenExpiry = 0;
+  localStorage.removeItem(DRIVE_CONNECTED_KEY);
+  localStorage.removeItem(DRIVE_FILE_KEY);
+  localStorage.removeItem(DRIVE_LAST_SYNC_KEY);
+  renderDriveStatus();
+  showToast('Google Drive disconnected');
+}
+
+async function driveFindOrCreateFile(token){
+  const cached = localStorage.getItem(DRIVE_FILE_KEY);
+  if(cached) return cached;
+  const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and 'appDataFolder' in parents and trashed=false`);
+  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=appDataFolder&fields=files(id,name)`, {
+    headers:{ Authorization: `Bearer ${token}` }
+  });
+  if(searchRes.ok){
+    const searchData = await searchRes.json();
+    if(searchData.files && searchData.files.length){
+      localStorage.setItem(DRIVE_FILE_KEY, searchData.files[0].id);
+      return searchData.files[0].id;
+    }
+  }
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method:'POST',
+    headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ name: DRIVE_FILE_NAME, parents:['appDataFolder'] })
+  });
+  if(!createRes.ok) return null;
+  const created = await createRes.json();
+  if(created.id){ localStorage.setItem(DRIVE_FILE_KEY, created.id); return created.id; }
+  return null;
+}
+
+async function pushToDrive(){
+  if(!navigator.onLine || !isDriveConnected()) return;
+  renderDriveStatus('syncing');
+  try{
+    const token = await ensureDriveToken(false);
+    if(!token) throw new Error('no token');
+    const fileId = await driveFindOrCreateFile(token);
+    if(!fileId) throw new Error('no file');
+    const updatedAt = getLocalUpdatedAt() || Date.now();
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      method:'PATCH',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ products, sales, customers, updatedAt })
+    });
+    if(!res.ok) throw new Error('upload failed');
+    localStorage.setItem(DRIVE_LAST_SYNC_KEY, String(Date.now()));
+    renderDriveStatus('synced');
+  }catch(e){
+    renderDriveStatus('error');
+  }
+}
+
+async function pullFromDrive(){
+  if(!navigator.onLine || !isDriveConnected()) return null;
+  try{
+    const token = await ensureDriveToken(false);
+    if(!token) return null;
+    const fileId = await driveFindOrCreateFile(token);
+    if(!fileId) return null;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers:{ Authorization:`Bearer ${token}` }
+    });
+    if(!res.ok) return null;
+    const text = await res.text();
+    if(!text) return null;
+    return JSON.parse(text);
+  }catch(e){ return null; }
+}
+
+function renderDriveStatus(state){
+  const label = document.getElementById('driveStatusText');
+  if(!label) return;
+  if(!isDriveConnected()){ label.textContent = 'Google Drive: not connected'; return; }
+  if(!navigator.onLine){ label.textContent = 'Google Drive: offline (will sync)'; return; }
+  if(state === 'syncing'){ label.textContent = 'Google Drive: syncing…'; return; }
+  if(state === 'error'){ label.textContent = 'Google Drive: sync failed'; return; }
+  const last = getDriveLastSynced();
+  label.textContent = last ? `Google Drive: synced ${timeAgo(last)}` : 'Google Drive: connected';
+}
+
+function initDriveUI(){
+  if(isDriveConnected()){
+    document.getElementById('driveSignInBtn').textContent = 'Re-connect Google';
+    document.getElementById('driveSyncNowBtn').style.display = '';
+    document.getElementById('driveDisconnectBtn').style.display = '';
+  }
+  renderDriveStatus();
+}
+
+document.getElementById('driveSignInBtn').addEventListener('click', signInGoogleDrive);
+document.getElementById('driveSyncNowBtn').addEventListener('click', async ()=>{
+  await syncWithCloud();
+  showToast('Synced with Google Drive');
+});
+document.getElementById('driveDisconnectBtn').addEventListener('click', ()=>{
+  disconnectGoogleDrive();
+  document.getElementById('driveSignInBtn').textContent = 'Sign in with Google';
+  document.getElementById('driveSyncNowBtn').style.display = 'none';
+  document.getElementById('driveDisconnectBtn').style.display = 'none';
+});
 
 function productById(id){ return products.find(p=>p.id===id); }
 function customerById(id){ return customers.find(c=>c.id===id); }
@@ -1797,7 +1983,9 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
   await loadData();
   renderAll();
   initCloudUI();
-  if(getCloudConfig()) await syncWithCloud();
+  initDriveUI();
+  initGoogleAuth();
+  if(getCloudConfig() || isDriveConnected()) await syncWithCloud();
 })();
 </script>
 
