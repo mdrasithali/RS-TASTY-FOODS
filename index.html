@@ -256,6 +256,7 @@
     top:calc(100% + 8px);
     right:0;
     width:260px;
+    max-width:calc(100vw - 48px);
     background:var(--panel);
     border:1px solid var(--line);
     border-radius:var(--radius);
@@ -367,7 +368,13 @@
       padding:20px 0 16px;
     }
     header > div:first-child{
-      gap:12px !important;
+      flex-direction:column;
+      align-items:stretch !important;
+      gap:14px !important;
+    }
+    header > div:first-child > div:last-child{
+      width:100%;
+      align-items:flex-end !important;
     }
     header img{
       max-width:100%;
@@ -507,6 +514,8 @@
     nav.tabs button{padding-left:11px; padding-right:11px;}
     .sale-form{grid-template-columns:1fr; padding:10px;}
     .field.grow{grid-column:auto;}
+    .cloud-pill{font-size:10px; padding:5px 9px;}
+    #saveHint{font-size:11px;}
   }
 
   @media (prefers-reduced-motion: reduce){
@@ -654,18 +663,7 @@
             <span class="dot"></span><span id="cloudPillText">Cloud: not connected</span>
           </button>
           <div class="cloud-panel" id="cloudPanel">
-            <p class="cloud-note">Connect a free <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a> account to back this data up and sync it across devices. Create a bin there, then paste its Bin ID and X-Master-Key below.</p>
-            <label for="cloudBinId">Bin ID</label>
-            <input type="text" id="cloudBinId" placeholder="e.g. 64f1a2c1...">
-            <label for="cloudApiKey">X-Master-Key</label>
-            <input type="text" id="cloudApiKey" placeholder="Your JSONBin API key">
-            <div class="cloud-actions">
-              <button class="btn btn-ghost" id="cloudSaveBtn" type="button">Connect</button>
-              <button class="btn btn-ghost" id="cloudSyncNowBtn" type="button" style="display:none;">Sync now</button>
-            </div>
-            <button class="btn-danger-text" id="cloudDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect cloud sync</button>
-            <hr style="border:none; border-top:1px solid var(--line); margin:14px 0;">
-            <p class="cloud-note" style="margin-bottom:8px;"><strong id="driveStatusText">Google Drive: not connected</strong></p>
+            <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices.</p>
             <div class="cloud-actions">
               <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
               <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
@@ -1047,109 +1045,51 @@ async function saveProducts(sync=true){ await storageSet(STORAGE_PRODUCTS, JSON.
 async function saveSales(sync=true){ await storageSet(STORAGE_SALES, JSON.stringify(sales)); if(sync){ touchLocalUpdated(); scheduleCloudSync(); } }
 async function saveCustomers(sync=true){ await storageSet(STORAGE_CUSTOMERS, JSON.stringify(customers)); if(sync){ touchLocalUpdated(); scheduleCloudSync(); } }
 
-// ---------- Cloud sync (JSONBin.io) ----------
-// Everything still saves to this device first (via storageSet above), so the
-// app keeps working offline. When a Bin ID + API key are configured and the
-// device is online, changes also get pushed to a JSONBin bin so the same
-// data can be pulled down on another device. Whichever side (local vs
-// cloud) changed most recently wins, based on the updatedAt timestamp
-// stored alongside the data.
-const CLOUD_CFG_KEY = 'ledger:cloudCfg';
+// ---------- Cloud sync ----------
+// Everything still saves to this device first (via storageSet above), so
+// the app keeps working offline. When signed in to Google Drive and the
+// device is online, changes also get pushed there so the same data can be
+// pulled down on another device. Whichever side (local vs cloud) changed
+// most recently wins, based on the updatedAt timestamp stored alongside
+// the data.
 const LOCAL_UPDATED_KEY = 'ledger:updatedAt';
-const CLOUD_LAST_SYNC_KEY = 'ledger:lastSynced';
 let cloudSyncTimer = null;
-let cloudSyncInFlight = false;
 
-function getCloudConfig(){
-  try{ const raw = localStorage.getItem(CLOUD_CFG_KEY); return raw ? JSON.parse(raw) : null; }
-  catch(e){ return null; }
-}
-function setCloudConfig(cfg){ try{ localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cfg)); }catch(e){} }
-function clearCloudConfig(){ try{ localStorage.removeItem(CLOUD_CFG_KEY); }catch(e){} }
 function touchLocalUpdated(){ try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(Date.now())); }catch(e){} }
 function getLocalUpdatedAt(){ return parseInt(localStorage.getItem(LOCAL_UPDATED_KEY) || '0', 10); }
-function getLastSyncedAt(){ return parseInt(localStorage.getItem(CLOUD_LAST_SYNC_KEY) || '0', 10); }
 
 function scheduleCloudSync(){
-  if(!getCloudConfig() && !isDriveConnected()) return;
+  if(!isDriveConnected()) return;
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(()=>{ pushToCloud(); pushToDrive(); }, 1200);
+  cloudSyncTimer = setTimeout(()=>{ pushToDrive(); }, 1200);
 }
 
-async function cloudRequest(method, body){
-  const cfg = getCloudConfig();
-  if(!cfg || !cfg.binId || !cfg.apiKey) throw new Error('not configured');
-  const url = `https://api.jsonbin.io/v3/b/${cfg.binId}${method==='GET' ? '/latest' : ''}`;
-  const res = await fetch(url, {
-    method,
-    headers:{ 'Content-Type':'application/json', 'X-Master-Key': cfg.apiKey, 'X-Bin-Meta': 'false' },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if(!res.ok) throw new Error('cloud request failed: '+res.status);
-  return res.json();
-}
-
-async function pushToCloud(){
-  if(!navigator.onLine || !getCloudConfig()) { renderCloudStatus(); return; }
-  if(cloudSyncInFlight){ scheduleCloudSync(); return; }
-  cloudSyncInFlight = true;
-  renderCloudStatus('syncing');
-  try{
-    const updatedAt = getLocalUpdatedAt() || Date.now();
-    await cloudRequest('PUT', { products, sales, customers, updatedAt });
-    localStorage.setItem(CLOUD_LAST_SYNC_KEY, String(Date.now()));
-    renderCloudStatus('synced');
-  }catch(e){
-    renderCloudStatus('error');
-  }finally{
-    cloudSyncInFlight = false;
-  }
-}
-
-async function pullFromCloud(){
-  if(!navigator.onLine || !getCloudConfig()) return null;
-  try{
-    const data = await cloudRequest('GET');
-    return (data && data.record) ? data.record : data;
-  }catch(e){ return null; }
-}
-
-// Compares local vs every configured cloud backend (JSONBin, Google Drive)
-// and keeps whichever changed most recently, then pushes that version back
-// out to any backend that was lagging behind.
+// Compares local vs Google Drive and keeps whichever changed most
+// recently, then makes sure the other side matches it.
 async function syncWithCloud(){
-  const jsonbinCfg = getCloudConfig();
-  const driveOn = isDriveConnected();
-  if((!jsonbinCfg && !driveOn) || !navigator.onLine){ renderCloudStatus(); renderDriveStatus(); return; }
-  renderCloudStatus('syncing'); renderDriveStatus('syncing');
-  const candidates = [{ source:'local', updatedAt:getLocalUpdatedAt(), data:{products,sales,customers} }];
-  if(jsonbinCfg){
-    const r = await pullFromCloud();
-    if(r) candidates.push({ source:'jsonbin', updatedAt:r.updatedAt||0, data:r });
+  if(!isDriveConnected() || !navigator.onLine){ renderDriveStatus(); return; }
+  renderDriveStatus('syncing');
+  const remote = await pullFromDrive();
+  if(remote){
+    const remoteUpdatedAt = remote.updatedAt || 0;
+    const localUpdatedAt = getLocalUpdatedAt();
+    if(remoteUpdatedAt > localUpdatedAt){
+      products = remote.products || products;
+      sales = remote.sales || sales;
+      customers = remote.customers || customers;
+      sales.forEach(s=>{
+        if(typeof s.customerId === 'undefined') s.customerId = '';
+        if(typeof s.paid === 'undefined') s.paid = true;
+      });
+      await saveProducts(false);
+      await saveSales(false);
+      await saveCustomers(false);
+      localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteUpdatedAt));
+      renderAll();
+      showToast('Pulled latest data from Google Drive');
+    }
   }
-  if(driveOn){
-    const r = await pullFromDrive();
-    if(r) candidates.push({ source:'drive', updatedAt:r.updatedAt||0, data:r });
-  }
-  candidates.sort((a,b)=>b.updatedAt-a.updatedAt);
-  const winner = candidates[0];
-  if(winner.source !== 'local'){
-    products = winner.data.products || products;
-    sales = winner.data.sales || sales;
-    customers = winner.data.customers || customers;
-    sales.forEach(s=>{
-      if(typeof s.customerId === 'undefined') s.customerId = '';
-      if(typeof s.paid === 'undefined') s.paid = true;
-    });
-    await saveProducts(false);
-    await saveSales(false);
-    await saveCustomers(false);
-    localStorage.setItem(LOCAL_UPDATED_KEY, String(winner.updatedAt));
-    renderAll();
-    showToast('Pulled latest data from '+(winner.source==='drive' ? 'Google Drive' : 'the cloud'));
-  }
-  if(jsonbinCfg) await pushToCloud();
-  if(driveOn) await pushToDrive();
+  await pushToDrive();
 }
 
 function timeAgo(ts){
@@ -1162,33 +1102,6 @@ function timeAgo(ts){
   return `${Math.floor(h/24)}d ago`;
 }
 
-function renderCloudStatus(state){
-  const pill = document.getElementById('cloudPill');
-  const text = document.getElementById('cloudPillText');
-  if(!pill || !text) return;
-  pill.classList.remove('synced','offline','error','syncing');
-  const cfg = getCloudConfig();
-  if(!cfg){ text.textContent = 'Cloud: not connected'; return; }
-  if(!navigator.onLine){ pill.classList.add('offline'); text.textContent = 'Cloud: offline (will sync)'; return; }
-  if(state === 'syncing'){ pill.classList.add('syncing'); text.textContent = 'Cloud: syncing…'; return; }
-  if(state === 'error'){ pill.classList.add('error'); text.textContent = 'Cloud: sync failed'; return; }
-  const last = getLastSyncedAt();
-  pill.classList.add('synced');
-  text.textContent = last ? `Cloud: synced ${timeAgo(last)}` : 'Cloud: connected';
-}
-
-function initCloudUI(){
-  const cfg = getCloudConfig();
-  if(cfg){
-    document.getElementById('cloudBinId').value = cfg.binId;
-    document.getElementById('cloudApiKey').value = cfg.apiKey;
-    document.getElementById('cloudSyncNowBtn').style.display = '';
-    document.getElementById('cloudDisconnectBtn').style.display = '';
-    document.getElementById('cloudSaveBtn').textContent = 'Update';
-  }
-  renderCloudStatus();
-}
-
 document.getElementById('cloudPill').addEventListener('click', ()=>{
   document.getElementById('cloudPanel').classList.toggle('open');
 });
@@ -1199,34 +1112,8 @@ document.addEventListener('click', (e)=>{
     panel.classList.remove('open');
   }
 });
-document.getElementById('cloudSaveBtn').addEventListener('click', async ()=>{
-  const binId = document.getElementById('cloudBinId').value.trim();
-  const apiKey = document.getElementById('cloudApiKey').value.trim();
-  if(!binId || !apiKey){ showToast('Enter both Bin ID and API key'); return; }
-  setCloudConfig({binId, apiKey});
-  document.getElementById('cloudSyncNowBtn').style.display = '';
-  document.getElementById('cloudDisconnectBtn').style.display = '';
-  document.getElementById('cloudSaveBtn').textContent = 'Update';
-  showToast('Cloud sync connected');
-  await syncWithCloud();
-});
-document.getElementById('cloudSyncNowBtn').addEventListener('click', async ()=>{
-  await syncWithCloud();
-  showToast('Synced with cloud');
-});
-document.getElementById('cloudDisconnectBtn').addEventListener('click', ()=>{
-  clearCloudConfig();
-  document.getElementById('cloudBinId').value = '';
-  document.getElementById('cloudApiKey').value = '';
-  document.getElementById('cloudSyncNowBtn').style.display = 'none';
-  document.getElementById('cloudDisconnectBtn').style.display = 'none';
-  document.getElementById('cloudSaveBtn').textContent = 'Connect';
-  document.getElementById('cloudPanel').classList.remove('open');
-  renderCloudStatus();
-  showToast('Cloud sync disconnected');
-});
-window.addEventListener('online', ()=>{ renderCloudStatus(); renderDriveStatus(); syncWithCloud(); });
-window.addEventListener('offline', ()=>{ renderCloudStatus(); renderDriveStatus(); });
+window.addEventListener('online', ()=>{ renderDriveStatus(); syncWithCloud(); });
+window.addEventListener('offline', ()=>{ renderDriveStatus(); });
 
 // ---------- Cloud sync (Google Drive) ----------
 // Stores one JSON file in the app's private Drive "appDataFolder" (a hidden
@@ -1368,14 +1255,17 @@ async function pullFromDrive(){
 }
 
 function renderDriveStatus(state){
-  const label = document.getElementById('driveStatusText');
-  if(!label) return;
-  if(!isDriveConnected()){ label.textContent = 'Google Drive: not connected'; return; }
-  if(!navigator.onLine){ label.textContent = 'Google Drive: offline (will sync)'; return; }
-  if(state === 'syncing'){ label.textContent = 'Google Drive: syncing…'; return; }
-  if(state === 'error'){ label.textContent = 'Google Drive: sync failed'; return; }
+  const pill = document.getElementById('cloudPill');
+  const text = document.getElementById('cloudPillText');
+  if(!pill || !text) return;
+  pill.classList.remove('synced','offline','error','syncing');
+  if(!isDriveConnected()){ text.textContent = 'Cloud: not connected'; return; }
+  if(!navigator.onLine){ pill.classList.add('offline'); text.textContent = 'Cloud: offline (will sync)'; return; }
+  if(state === 'syncing'){ pill.classList.add('syncing'); text.textContent = 'Cloud: syncing…'; return; }
+  if(state === 'error'){ pill.classList.add('error'); text.textContent = 'Cloud: sync failed'; return; }
   const last = getDriveLastSynced();
-  label.textContent = last ? `Google Drive: synced ${timeAgo(last)}` : 'Google Drive: connected';
+  pill.classList.add('synced');
+  text.textContent = last ? `Cloud: synced ${timeAgo(last)}` : 'Cloud: connected';
 }
 
 function initDriveUI(){
@@ -1982,10 +1872,9 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
   document.getElementById('saleDate').value = new Date().toISOString().slice(0,10);
   await loadData();
   renderAll();
-  initCloudUI();
   initDriveUI();
   initGoogleAuth();
-  if(getCloudConfig() || isDriveConnected()) await syncWithCloud();
+  if(isDriveConnected()) await syncWithCloud();
 })();
 </script>
 
