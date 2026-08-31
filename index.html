@@ -7,17 +7,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&amp;family=Inter:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#F6F0E1;
-    --panel:#FFFEFB;
-    --ink:#2B2118;
-    --ink-soft:#7A6A56;
-    --indigo:#223A5E;
-    --indigo-soft:#3A537A;
+    --bg:#F1F3E7;
+    --panel:#FEFEFA;
+    --ink:#22281F;
+    --ink-soft:#6E7A5F;
+    --indigo:#28502E;
+    --indigo-soft:#43704A;
     --rust:#B5482A;
     --turmeric:#C98A12;
     --green:#3F6B47;
-    --line:#E4D6BB;
-    --line-soft:#EEE4CE;
+    --line:#D8E0C6;
+    --line-soft:#E9EEDD;
     --radius:10px;
   }
   *{box-sizing:border-box;}
@@ -145,6 +145,13 @@
   }
   #breakdownWrap table, #historyWrap table, #monthlySummaryWrap table, #monthlyDetailWrap table, #productsWrap table, #customersWrap table, #customerDetailWrap table{
     min-width:640px;
+  }
+  /* Products switches to cards based on its OWN rendered width, not the
+     viewport — this keeps it working inside previews/webviews that don't
+     report viewport width the way a normal mobile browser does. */
+  #productsWrap{
+    container-type:inline-size;
+    container-name:products;
   }
   thead th{
     text-align:left;
@@ -496,6 +503,7 @@
     .badge{font-size:10px; padding:3px 7px;}
     .empty{padding:24px 12px; font-size:12.5px;}
     .note{font-size:11px;}
+
     .toast{
       left:12px;
       right:12px;
@@ -504,6 +512,47 @@
       bottom:14px;
       font-size:12px;
     }
+  }
+
+  /* Products: cards instead of a cramped scrolling table.
+     Driven by the wrap's own width (container query) so it kicks in
+     reliably even when the surrounding viewport width is misreported. */
+  @container products (max-width:640px){
+    #productsWrap{overflow-x:visible; border-radius:0;}
+    #productsWrap table{min-width:0; width:100%; border:none; background:none; border-collapse:separate; border-spacing:0;}
+    #productsWrap thead{display:none;}
+    #productsWrap tbody{display:flex; flex-direction:column; gap:10px;}
+    #productsWrap tr{
+      display:block;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:4px 14px;
+    }
+    #productsWrap td{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:9px 0;
+      border-top:1px dashed var(--line);
+      font-size:13px;
+    }
+    #productsWrap tr td:first-child{border-top:none;}
+    #productsWrap td::before{
+      content:attr(data-label);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10px;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      color:var(--ink-soft);
+      flex-shrink:0;
+    }
+    #productsWrap td.name{flex-direction:column; align-items:stretch; gap:6px;}
+    #productsWrap td input{width:auto; max-width:150px; text-align:right;}
+    #productsWrap td.name input{max-width:none; width:100%; text-align:left;}
+    #productsWrap td:last-child{justify-content:flex-end; border-top:none; padding-top:2px;}
+    #productsWrap td:last-child::before{content:none;}
   }
 
   @media (max-width:380px){
@@ -1551,13 +1600,13 @@ function renderProducts(){
     <tbody>${products.map(p=>{
       const prof = unitProfit(p);
       return `<tr data-pid="${p.id}">
-        <td class="name"><input type="text" class="name-field" data-pid="${p.id}" value="${p.name}"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="${p.id}" value="${p.cost}"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="${p.id}" value="${p.courier}"></td>
-        <td class="num">${fmtMoney(totalCost(p))}</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="${p.id}" value="${p.price}"></td>
-        <td class="num ${prof>0?'profit-pos':(prof<0?'profit-neg':'profit-zero')}">${fmtMoney(prof)}</td>
-        <td><button class="btn-danger-text" data-del-pid="${p.id}">Remove</button></td>
+        <td class="name" data-label="Product"><input type="text" class="name-field" data-pid="${p.id}" value="${p.name}"></td>
+        <td class="num" data-label="Cost"><input type="number" class="price-input cost-field" data-pid="${p.id}" value="${p.cost}"></td>
+        <td class="num" data-label="Courier"><input type="number" class="price-input courier-field" data-pid="${p.id}" value="${p.courier}"></td>
+        <td class="num" data-label="Total Cost">${fmtMoney(totalCost(p))}</td>
+        <td class="num" data-label="Selling Price"><input type="number" class="price-input price-field" data-pid="${p.id}" value="${p.price}"></td>
+        <td class="num ${prof>0?'profit-pos':(prof<0?'profit-neg':'profit-zero')}" data-label="Profit/Unit">${fmtMoney(prof)}</td>
+        <td data-label=""><button class="btn-danger-text" data-del-pid="${p.id}">Remove</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
