@@ -17,7 +17,7 @@
   // #access_token=...&token_type=Bearer&expires_in=3599&scope=...
   // Fragments are not always preserved reliably when handed to a custom
   // scheme, so we move it into a query string, which is.
-  var raw = window.location.hash.substring(1);
+  var raw = window.location.hash.substring(1) || window.location.search.substring(1);
 
   if (raw && raw.indexOf('access_token=') !== -1) {
     var target = 'rstastyfoods://oauth-callback.html?' + raw;
@@ -32,7 +32,8 @@
     }, 1500);
   } else {
     document.getElementById('msg').textContent =
-      'Sign-in did not complete. Please close this page and try again in the app.';
+      'Sign-in did not complete. Debug info: ' +
+      (raw ? raw : '(no hash/query data at all — full URL: ' + window.location.href + ')');
   }
 </script>
 </body>
