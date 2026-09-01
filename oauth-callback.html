@@ -6,30 +6,30 @@
 <title>Signing you in…</title>
 <style>
   body{font-family:sans-serif;background:#f3f4ea;color:#2f3a2a;display:flex;
-       align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px;}
+       flex-direction:column;align-items:center;justify-content:center;height:100vh;
+       margin:0;text-align:center;padding:20px;}
   p{max-width:320px;}
+  button{margin-top:20px;padding:16px 28px;font-size:17px;font-weight:600;
+         background:#224145;color:#fff;border:none;border-radius:10px;
+         cursor:pointer;}
 </style>
 </head>
 <body>
-<p id="msg">Finishing sign-in… you can return to the app.</p>
+<p id="msg">Signed in with Google.</p>
+<button id="returnBtn" style="display:none;">Tap here to return to the app</button>
 <script>
-  // Google redirects here with the token in the URL fragment, e.g.
-  // #access_token=...&token_type=Bearer&expires_in=3599&scope=...
-  // Fragments are not always preserved reliably when handed to a custom
-  // scheme, so we move it into a query string, which is.
   var raw = window.location.hash.substring(1) || window.location.search.substring(1);
+  var btn = document.getElementById('returnBtn');
 
   if (raw && raw.indexOf('access_token=') !== -1) {
     var target = 'rstastyfoods://oauth-callback.html?' + raw;
+    btn.style.display = 'inline-block';
+    btn.addEventListener('click', function () {
+      window.location.href = target;
+    });
+    // Try it automatically too, in case this particular browser allows it —
+    // if it's blocked, the button above is the reliable fallback.
     window.location.href = target;
-
-    // Fallback message in case the OS doesn't auto-return to the app
-    // (e.g. if this page was opened in a plain browser tab instead of
-    // inside the app's flow).
-    setTimeout(function () {
-      document.getElementById('msg').textContent =
-        'Signed in with Google. If you are not returned to the app automatically, please reopen it.';
-    }, 1500);
   } else {
     document.getElementById('msg').textContent =
       'Sign-in did not complete. Debug info: ' +
