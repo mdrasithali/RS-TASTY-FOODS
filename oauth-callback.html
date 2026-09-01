@@ -20,7 +20,7 @@
   var raw = window.location.hash.substring(1);
 
   if (raw && raw.indexOf('access_token=') !== -1) {
-    var target = 'rstastyfoods://oauth-callback?' + raw;
+    var target = 'rstastyfoods://oauth-callback.html?' + raw;
     window.location.href = target;
 
     // Fallback message in case the OS doesn't auto-return to the app
