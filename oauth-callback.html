@@ -1,40 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Signing you in…</title>
-<style>
-  body{font-family:sans-serif;background:#f3f4ea;color:#2f3a2a;display:flex;
-       flex-direction:column;align-items:center;justify-content:center;height:100vh;
-       margin:0;text-align:center;padding:20px;}
-  p{max-width:320px;}
-  button{margin-top:20px;padding:16px 28px;font-size:17px;font-weight:600;
-         background:#224145;color:#fff;border:none;border-radius:10px;
-         cursor:pointer;}
-</style>
+<title>Returning to RS Tasty Foods…</title>
+<style>body{font-family:system-ui,sans-serif;background:#f3f4ea;color:#2f3a2a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}p{max-width:340px;line-height:1.5}button{margin-top:18px;padding:14px 24px;font-size:16px;font-weight:700;background:#28502E;color:#fff;border:0;border-radius:10px}</style>
 </head>
 <body>
-<p id="msg">Signed in with Google.</p>
-<button id="returnBtn" style="display:none;">Tap here to return to the app</button>
+<p id="msg">Google sign-in completed. Returning to RS Tasty Foods…</p>
+<button id="returnBtn" hidden>Return to app</button>
 <script>
-  var raw = window.location.hash.substring(1) || window.location.search.substring(1);
-  var btn = document.getElementById('returnBtn');
-
-  if (raw && raw.indexOf('access_token=') !== -1) {
-    var target = 'rstastyfoods://oauth-callback.html?' + raw;
-    btn.style.display = 'inline-block';
-    btn.addEventListener('click', function () {
-      window.location.href = target;
-    });
-    // Try it automatically too, in case this particular browser allows it —
-    // if it's blocked, the button above is the reliable fallback.
-    window.location.href = target;
-  } else {
-    document.getElementById('msg').textContent =
-      'Sign-in did not complete. Debug info: ' +
-      (raw ? raw : '(no hash/query data at all — full URL: ' + window.location.href + ')');
-  }
+(function(){
+ const msg=document.getElementById('msg');
+ const btn=document.getElementById('returnBtn');
+ const raw=window.location.hash.substring(1)||window.location.search.substring(1);
+ const params=new URLSearchParams(raw);
+ if(!params.get('access_token')){msg.textContent='Google sign-in did not complete. You can close this page and try again.';return;}
+ const target='rstastyfoods://oauth-callback.html?'+raw;
+ function returnToApp(){window.location.href=target;}
+ btn.hidden=false;
+ btn.addEventListener('click',returnToApp);
+ setTimeout(returnToApp,250);
+})();
 </script>
 </body>
 </html>
