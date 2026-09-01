@@ -1261,6 +1261,23 @@ function checkIncomingGoogleToken(){
   history.replaceState(null, '', window.location.pathname);
 }
 
+// TEMPORARY DEBUG: shows what URL the app actually received after the
+// Google sign-in round trip, so we can see whether the token survived the
+// handoff through the custom URL scheme. Safe to remove once this works.
+(function debugShowIncomingUrl(){
+  const href = window.location.href;
+  const looksRelevant = href.indexOf('oauth') !== -1 ||
+                         href.indexOf('access_token') !== -1 ||
+                         href.indexOf('rstastyfoods') !== -1 ||
+                         !!window.location.search ||
+                         (window.location.hash && window.location.hash.length > 1);
+  if (looksRelevant) {
+    setTimeout(function(){
+      showToast('DEBUG URL: ' + href.slice(0, 150));
+    }, 800);
+  }
+})();
+
 function disconnectGoogleDrive(){
   if(gAccessToken && window.google) google.accounts.oauth2.revoke(gAccessToken, ()=>{});
   gAccessToken = null; gTokenExpiry = 0;
