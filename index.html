@@ -712,7 +712,7 @@
             <span class="dot"></span><span id="cloudPillText">Cloud: not connected</span>
           </button>
           <div class="cloud-panel" id="cloudPanel">
-            <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices.</p>
+            <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices. In the APK, Google sign-in opens in Chrome and returns to the app.</p>
             <div class="cloud-actions">
               <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
               <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
@@ -1177,12 +1177,66 @@ const DRIVE_CONNECTED_KEY = 'ledger:driveConnected';
 const DRIVE_FILE_KEY = 'ledger:driveFileId';
 const DRIVE_LAST_SYNC_KEY = 'ledger:driveLastSynced';
 const DRIVE_FILE_NAME = 'rs-tasty-foods-data.json';
+
+// GitHub Pages callback used only by the WebToAPK/external-browser fallback.
+const OAUTH_CALLBACK_URL = 'https://mdrasithali.github.io/RS-TASTY-FOODS/oauth-callback.html';
+const OAUTH_STATE_KEY = 'ledger:oauthState';
+
 let gTokenClient = null;
 let gAccessToken = null;
 let gTokenExpiry = 0;
 
 function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
 function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
+
+function isEmbeddedWebView(){
+  const ua = navigator.userAgent || '';
+  return /\bwv\b|; wv\)|WebView/i.test(ua) ||
+    (/Android/i.test(ua) && /Version\/4\.0/i.test(ua) && /Chrome/i.test(ua));
+}
+
+function makeOAuthState(){
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  const state = Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
+  localStorage.setItem(OAUTH_STATE_KEY, state);
+  return state;
+}
+function getOAuthState(){ return localStorage.getItem(OAUTH_STATE_KEY) || ''; }
+function clearOAuthState(){ localStorage.removeItem(OAUTH_STATE_KEY); }
+
+function handleNativeOAuthCallback(){
+  const hash = new URLSearchParams(window.location.hash.substring(1));
+  const query = new URLSearchParams(window.location.search.substring(1));
+  const params = hash.has('access_token') ? hash : query;
+  const token = params.get('access_token');
+  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+  const state = params.get('state') || '';
+
+  if(!token) return false;
+
+  const expectedState = getOAuthState();
+  if(!expectedState || !state || state !== expectedState){
+    showToast('Google sign-in could not be verified');
+    return false;
+  }
+
+  clearOAuthState();
+  gAccessToken = token;
+  gTokenExpiry = Date.now() + Math.max(60, expiresIn - 60) * 1000;
+  localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
+
+  // Remove the token from the address bar immediately.
+  history.replaceState({}, document.title, window.location.pathname);
+
+  setTimeout(async ()=>{
+    initDriveUI();
+    renderDriveStatus('connected');
+    showToast('Google Drive connected');
+    await syncWithCloud();
+  }, 0);
+  return true;
+}
 
 function initGoogleAuth(){
   if(!window.google || !google.accounts || !google.accounts.oauth2){
@@ -1203,84 +1257,50 @@ function ensureDriveToken(interactive){
     gTokenClient.callback = (resp)=>{
       if(resp && resp.access_token){
         gAccessToken = resp.access_token;
-        gTokenExpiry = Date.now() + ((resp.expires_in||3600)*1000 - 60000);
+        gTokenExpiry = Date.now() + Math.max(60, (resp.expires_in || 3600) - 60) * 1000;
         localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
         resolve(gAccessToken);
-      }else{
-        resolve(null);
-      }
+      }else resolve(null);
     };
     gTokenClient.error_callback = ()=>resolve(null);
     gTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
   });
 }
 
-// OAuth redirect URI: must be added as an "Authorized redirect URI" for this
-// client ID in Google Cloud Console > APIs & Services > Credentials.
-const OAUTH_REDIRECT_URI = 'https://mdrasithali.github.io/RS-TASTY-FOODS/oauth-callback.html';
-// Custom scheme registered in the app builder (Deep Links & Custom Actions).
-// oauth-callback.html hands the token to this scheme so the app regains
-// control after Chrome finishes the Google sign-in.
-const APP_CUSTOM_SCHEME = 'rstastyfoods';
-
-function signInGoogleDrive(){
-  // Full-page redirect (not a popup) so an "open external links in browser"
-  // style app setting can hand this specific navigation off to Chrome, where
-  // Google allows the sign-in flow (it blocks sign-in inside a plain WebView).
+// WebToAPK uses Android WebView. Google OAuth must run in the external browser,
+// not inside that WebView. The callback page then deep-links back into the APK.
+function signInFromExternalBrowser(){
+  const state = makeOAuthState();
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: OAUTH_REDIRECT_URI,
+    redirect_uri: OAUTH_CALLBACK_URL,
     response_type: 'token',
     scope: DRIVE_SCOPE,
     include_granted_scopes: 'true',
-    prompt: 'consent'
+    prompt: 'consent',
+    state,
+    disallow_webview: 'true'
   });
   window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 
-// Called on startup in case the app was just reopened via the
-// rstastyfoods://oauth-callback deep link (or, as a fallback, in case the
-// WebView simply reloaded this page with the token still in the URL).
-function checkIncomingGoogleToken(){
-  const raw = (window.location.hash && window.location.hash.length > 1)
-    ? window.location.hash.substring(1)
-    : window.location.search.substring(1);
-  if(!raw) return;
-  const params = new URLSearchParams(raw);
-  const token = params.get('access_token');
-  if(!token) return;
-  gAccessToken = token;
-  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
-  gTokenExpiry = Date.now() + (expiresIn * 1000 - 60000);
-  localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
+async function signInGoogleDrive(){
+  if(isEmbeddedWebView()){
+    signInFromExternalBrowser();
+    return;
+  }
+  const token = await ensureDriveToken(true);
+  if(!token){ showToast('Google sign-in failed or was cancelled'); return; }
   initDriveUI();
   renderDriveStatus('connected');
   showToast('Google Drive connected');
-  syncWithCloud();
-  // Clean the token out of the visible URL so a refresh doesn't reprocess it.
-  history.replaceState(null, '', window.location.pathname);
+  await syncWithCloud();
 }
-
-// TEMPORARY DEBUG: shows what URL the app actually received after the
-// Google sign-in round trip, so we can see whether the token survived the
-// handoff through the custom URL scheme. Safe to remove once this works.
-(function debugShowIncomingUrl(){
-  const href = window.location.href;
-  const looksRelevant = href.indexOf('oauth') !== -1 ||
-                         href.indexOf('access_token') !== -1 ||
-                         href.indexOf('rstastyfoods') !== -1 ||
-                         !!window.location.search ||
-                         (window.location.hash && window.location.hash.length > 1);
-  if (looksRelevant) {
-    setTimeout(function(){
-      showToast('DEBUG URL: ' + href.slice(0, 150));
-    }, 800);
-  }
-})();
 
 function disconnectGoogleDrive(){
   if(gAccessToken && window.google) google.accounts.oauth2.revoke(gAccessToken, ()=>{});
   gAccessToken = null; gTokenExpiry = 0;
+  clearOAuthState();
   localStorage.removeItem(DRIVE_CONNECTED_KEY);
   localStorage.removeItem(DRIVE_FILE_KEY);
   localStorage.removeItem(DRIVE_LAST_SYNC_KEY);
@@ -1305,7 +1325,7 @@ async function driveFindOrCreateFile(token){
   const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
     method:'POST',
     headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name: DRIVE_FILE_NAME, parents:['appDataFolder'] })
+    body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType:'application/json', parents:['appDataFolder'] })
   });
   if(!createRes.ok) return null;
   const created = await createRes.json();
@@ -1327,12 +1347,16 @@ async function pushToDrive(){
       headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
       body: JSON.stringify({ products, sales, customers, updatedAt })
     });
+    if(res.status === 401){
+      gAccessToken = null; gTokenExpiry = 0;
+      localStorage.removeItem(DRIVE_CONNECTED_KEY);
+      localStorage.removeItem(DRIVE_FILE_KEY);
+      throw new Error('authorization expired');
+    }
     if(!res.ok) throw new Error('upload failed');
     localStorage.setItem(DRIVE_LAST_SYNC_KEY, String(Date.now()));
     renderDriveStatus('synced');
-  }catch(e){
-    renderDriveStatus('error');
-  }
+  }catch(e){ renderDriveStatus('error'); }
 }
 
 async function pullFromDrive(){
@@ -1343,8 +1367,14 @@ async function pullFromDrive(){
     const fileId = await driveFindOrCreateFile(token);
     if(!fileId) return null;
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers:{ Authorization:`Bearer ${token}` }
+      headers:{ Authorization: `Bearer ${token}` }
     });
+    if(res.status === 401){
+      gAccessToken = null; gTokenExpiry = 0;
+      localStorage.removeItem(DRIVE_CONNECTED_KEY);
+      localStorage.removeItem(DRIVE_FILE_KEY);
+      return null;
+    }
     if(!res.ok) return null;
     const text = await res.text();
     if(!text) return null;
@@ -1376,10 +1406,7 @@ function initDriveUI(){
 }
 
 document.getElementById('driveSignInBtn').addEventListener('click', signInGoogleDrive);
-document.getElementById('driveSyncNowBtn').addEventListener('click', async ()=>{
-  await syncWithCloud();
-  showToast('Synced with Google Drive');
-});
+document.getElementById('driveSyncNowBtn').addEventListener('click', async ()=>{ await syncWithCloud(); showToast('Synced with Google Drive'); });
 document.getElementById('driveDisconnectBtn').addEventListener('click', ()=>{
   disconnectGoogleDrive();
   document.getElementById('driveSignInBtn').textContent = 'Sign in with Google';
@@ -1968,11 +1995,12 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
 
 (async function init(){
   document.getElementById('saleDate').value = new Date().toISOString().slice(0,10);
+  const returnedFromOAuth = handleNativeOAuthCallback();
   await loadData();
   renderAll();
   initDriveUI();
   initGoogleAuth();
-  checkIncomingGoogleToken();
+  if(returnedFromOAuth) return;
   if(isDriveConnected()) await syncWithCloud();
 })();
 </script>
