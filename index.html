@@ -1015,6 +1015,7 @@ const STORAGE_PRODUCTS = 'ledger:products';
 const STORAGE_SALES = 'ledger:sales';
 const STORAGE_CUSTOMERS = 'ledger:customers';
 const LOCAL_UPDATED_KEY = 'ledger:localUpdatedAt';
+const LOCAL_DIRTY_KEY = 'ledger:localDirty';
 
 function getLocalUpdatedAt(){
   try{ return parseInt(localStorage.getItem(LOCAL_UPDATED_KEY) || '0', 10) || 0; }catch(e){ return 0; }
@@ -1022,8 +1023,19 @@ function getLocalUpdatedAt(){
 
 function touchLocalUpdated(){
   const ts = Date.now();
-  try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(ts)); }catch(e){}
+  try{
+    localStorage.setItem(LOCAL_UPDATED_KEY, String(ts));
+    localStorage.setItem(LOCAL_DIRTY_KEY, '1');
+  }catch(e){}
   return ts;
+}
+
+function isLocalDirty(){
+  try{ return localStorage.getItem(LOCAL_DIRTY_KEY) === '1'; }catch(e){ return false; }
+}
+
+function clearLocalDirty(){
+  try{ localStorage.removeItem(LOCAL_DIRTY_KEY); }catch(e){}
 }
 
 function timeAgo(timestamp){
@@ -1285,51 +1297,72 @@ function attachFirebaseListener(){
   if(!firebaseUser) return;
   firebaseUnsubscribe = firebaseDocRef().onSnapshot(async snap=>{
     if(!snap.exists){
+      // A brand-new cloud document: upload this browser's existing data once.
       await pushToFirebase(true);
       markMigrationComplete();
+      clearLocalDirty();
       return;
     }
     const data = snap.data() || {};
 
-    // First Google/Firebase sync: never replace existing local records with an
-    // empty/older cloud document. Merge local records into the cloud document
-    // so data created before Google sign-in is preserved.
-    if(!migrationComplete() && hasLocalUserData()){
-      const merged = {
-        products: mergeRecords(data.products, products),
-        sales: mergeRecords(data.sales, sales),
-        customers: mergeRecords(data.customers, customers),
-        updatedAt: Math.max(Number(data.updatedAt || 0), getLocalUpdatedAt(), Date.now()),
-        schemaVersion: 2
-      };
-      products = merged.products;
-      sales = merged.sales;
-      customers = merged.customers;
-      try{
-        await firebaseDocRef().set({...merged, updatedAtServer: firebase.firestore.FieldValue.serverTimestamp()}, {merge:false});
-        await saveProducts(false);
-        await saveSales(false);
-        await saveCustomers(false);
-        try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(merged.updatedAt)); }catch(e){}
-        try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
-        markMigrationComplete();
-        renderAll();
-        renderFirebaseStatus('synced');
-        showToast('Previous local data preserved and synced');
-        return;
-      }catch(e){
-        console.error('Firebase migration write failed', e);
-        // Fall through to normal sync error handling below.
+    // First sync on a browser: preserve meaningful local data instead of
+    // allowing an empty/new cloud document to erase it. A fresh browser that
+    // only has the built-in default products will simply download the cloud.
+    if(!migrationComplete()){
+      if(hasLocalUserData()){
+        const merged = {
+          products: mergeRecords(data.products, products),
+          sales: mergeRecords(data.sales, sales),
+          customers: mergeRecords(data.customers, customers),
+          updatedAt: Math.max(Number(data.updatedAt || 0), getLocalUpdatedAt(), Date.now()),
+          schemaVersion: 2
+        };
+        products = merged.products;
+        sales = merged.sales;
+        customers = merged.customers;
+        try{
+          firebaseWriteInProgress = true;
+          await firebaseDocRef().set({...merged, updatedAtServer: firebase.firestore.FieldValue.serverTimestamp()}, {merge:false});
+          await saveProducts(false);
+          await saveSales(false);
+          await saveCustomers(false);
+          try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(merged.updatedAt)); }catch(e){}
+          try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
+          markMigrationComplete();
+          clearLocalDirty();
+          renderAll();
+          renderFirebaseStatus('synced');
+          showToast('Previous local data preserved and synced');
+          return;
+        }catch(e){
+          console.error('Firebase migration write failed', e);
+          showFirebaseError('Firestore migration failed — ' + (e && e.message ? e.message : String(e)));
+          renderFirebaseStatus('error');
+          return;
+        }finally{
+          firebaseWriteInProgress = false;
+        }
       }
+
+      // No meaningful local data: the cloud is the source of truth.
+      await applyFirebaseData(data, false);
+      markMigrationComplete();
+      clearLocalDirty();
+      renderFirebaseStatus('synced');
+      return;
     }
 
-    const remoteUpdatedAt = Number(data.updatedAt || 0);
-    const localUpdatedAt = getLocalUpdatedAt();
-    // Ignore an older remote snapshot. Our own write is allowed through.
-    if(remoteUpdatedAt >= localUpdatedAt || firebaseWriteInProgress){
-      await applyFirebaseData(data, false);
+    // After initial migration, Firestore is the shared source of truth.
+    // If this browser has a local edit waiting to be uploaded, don't let an
+    // older snapshot overwrite that edit. Its scheduled write will publish it.
+    if(isLocalDirty() && !firebaseWriteInProgress){
+      renderFirebaseStatus('syncing');
+      scheduleFirebaseSync();
+      return;
     }
-    markMigrationComplete();
+
+    await applyFirebaseData(data, false);
+    clearLocalDirty();
     renderFirebaseStatus('synced');
   }, err=>{
     console.error('Firebase listener error', err);
@@ -1352,6 +1385,7 @@ async function pushToFirebase(force=false){
       schemaVersion: 2
     }, {merge:false});
     localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now()));
+    clearLocalDirty();
     renderFirebaseStatus('synced');
   }catch(e){
     console.error('Firebase write failed', e);
@@ -1484,7 +1518,6 @@ async function initFirebaseUI(){
         document.getElementById('saveHint').textContent = `Changes save automatically and sync across devices (${user.email || 'Google account'}).`;
         attachFirebaseListener();
         renderFirebaseStatus('syncing');
-        scheduleFirebaseSync();
       }else{
         if(firebaseUnsubscribe) firebaseUnsubscribe();
         firebaseUnsubscribe = null;
