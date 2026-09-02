@@ -1026,6 +1026,22 @@ function touchLocalUpdated(){
   return ts;
 }
 
+function timeAgo(timestamp){
+  const t = Number(timestamp || 0);
+  if(!t) return 'just now';
+  const diff = Math.max(0, Date.now() - t);
+  const seconds = Math.floor(diff / 1000);
+  if(seconds < 10) return 'just now';
+  if(seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if(minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if(hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if(days < 7) return `${days}d ago`;
+  return new Date(t).toLocaleDateString();
+}
+
 const DEFAULT_PRODUCTS = [
   ["Santhanam Soap",80,10,120],["Kuppaimeni Soap",80,10,120],["Thengai ennai Soap",80,5,100],
   ["Naattu sarkarai",47,10,70],["Karupatti 250g",130,5,150],["Panankarkandu 250g",150,5,200],
