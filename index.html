@@ -1014,6 +1014,17 @@
 const STORAGE_PRODUCTS = 'ledger:products';
 const STORAGE_SALES = 'ledger:sales';
 const STORAGE_CUSTOMERS = 'ledger:customers';
+const LOCAL_UPDATED_KEY = 'ledger:localUpdatedAt';
+
+function getLocalUpdatedAt(){
+  try{ return parseInt(localStorage.getItem(LOCAL_UPDATED_KEY) || '0', 10) || 0; }catch(e){ return 0; }
+}
+
+function touchLocalUpdated(){
+  const ts = Date.now();
+  try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(ts)); }catch(e){}
+  return ts;
+}
 
 const DEFAULT_PRODUCTS = [
   ["Santhanam Soap",80,10,120],["Kuppaimeni Soap",80,10,120],["Thengai ennai Soap",80,5,100],
