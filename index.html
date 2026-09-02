@@ -695,7 +695,6 @@
 </style>
 </head>
 <body>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <div class="wrap">
   <header>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
@@ -708,16 +707,26 @@
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
         <div class="cloud-wrap">
-          <button class="cloud-pill" id="cloudPill" type="button">
+          <button class="cloud-pill" id="cloudPill" type="button" onclick="document.getElementById('cloudPanel')?.classList.toggle('open')">
             <span class="dot"></span><span id="cloudPillText">Cloud: not connected</span>
           </button>
           <div class="cloud-panel" id="cloudPanel">
-            <p class="cloud-note">Sign in with Google to back this data up to your Google Drive and sync it across devices. In the APK, Google sign-in opens in Chrome and returns to the app.</p>
-            <div class="cloud-actions">
-              <button class="btn btn-ghost" id="driveSignInBtn" type="button">Sign in with Google</button>
-              <button class="btn btn-ghost" id="driveSyncNowBtn" type="button" style="display:none;">Sync now</button>
+            <p class="cloud-note">Sign in with Google to sync products, sales and customers across devices. Email/password remains available as a backup.</p>
+            <div id="firebaseAuthForm">
+              <div id="firebaseError" style="display:none; margin:0 0 8px; padding:8px; border-radius:8px; font-size:12px; background:#fff3f3; color:#b42318;"></div>
+              <button class="btn btn-primary" id="firebaseGoogleBtn" type="button" style="width:100%; margin-bottom:8px;">Continue with Google</button>
+              <div style="font-size:10px; text-align:center; color:var(--ink-soft); margin:2px 0 8px;">or use email/password</div>
+              <input id="firebaseEmail" type="email" autocomplete="email" placeholder="Email address" style="width:100%; margin:0 0 7px;">
+              <input id="firebasePassword" type="password" autocomplete="current-password" placeholder="Password (6+ characters)" style="width:100%; margin:0 0 8px;">
+              <div class="cloud-actions">
+                <button class="btn btn-ghost" id="firebaseSignInBtn" type="button">Sign in</button>
+                <button class="btn btn-ghost" id="firebaseCreateBtn" type="button">Create account</button>
+              </div>
             </div>
-            <button class="btn-danger-text" id="driveDisconnectBtn" type="button" style="display:none; margin-top:10px;">Disconnect Google Drive</button>
+            <div class="cloud-actions" style="margin-top:8px;">
+              <button class="btn btn-ghost" id="firebaseSyncNowBtn" type="button" style="display:none;">Sync now</button>
+            </div>
+            <button class="btn-danger-text" id="firebaseSignOutBtn" type="button" style="display:none; margin-top:10px;">Sign out</button>
           </div>
         </div>
         <div class="note" id="saveHint" style="margin:0; text-align:right; max-width:260px;">Changes save automatically on this device.</div>
@@ -998,6 +1007,9 @@
 <div class="toast" id="toast">Product updated</div>
 
 <script type="application/json" id="seed-data">{"products":[{"id":"p0","name":"Santhanam Soap","cost":80,"courier":10,"price":120},{"id":"p1","name":"Kuppaimeni Soap","cost":80,"courier":10,"price":120},{"id":"p2","name":"Thengai ennai Soap","cost":80,"courier":5,"price":100},{"id":"p3","name":"Naattu sarkarai","cost":47,"courier":10,"price":70},{"id":"p4","name":"Karupatti 250g","cost":130,"courier":5,"price":150},{"id":"p5","name":"Panankarkandu 250g","cost":150,"courier":5,"price":200},{"id":"p6","name":"Vellam 500g","cost":40,"courier":5,"price":60},{"id":"p7","name":"Thengai ennai 200ml","cost":90,"courier":5,"price":110},{"id":"p8","name":"Thengai ennai 500ml","cost":200,"courier":5,"price":260},{"id":"p9","name":"Nallennai 500ml","cost":200,"courier":5,"price":250},{"id":"p10","name":"Kadalai ennai 500ml","cost":165,"courier":5,"price":200},{"id":"p11","name":"Poosu Manjal 50g","cost":40,"courier":5,"price":60},{"id":"p12","name":"Kulambu Manjal 50g","cost":40,"courier":5,"price":60},{"id":"p13","name":"Beetroot Malt","cost":230,"courier":5,"price":290},{"id":"p14","name":"Uppu","cost":20,"courier":5,"price":35},{"id":"p15","name":"Satthu Maavu 250g","cost":70,"courier":10,"price":150},{"id":"p16","name":"Biryani Masala 50g","cost":50,"courier":10,"price":100},{"id":"p17","name":"Karuppu Kavuni Kali Maavu 250g","cost":50,"courier":10,"price":120},{"id":"p18","name":"Karuppu Ulunthu Kali Maavu 250g","cost":50,"courier":10,"price":120}],"sales":[]}</script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 const STORAGE_PRODUCTS = 'ledger:products';
 const STORAGE_SALES = 'ledger:sales';
@@ -1090,329 +1102,314 @@ async function storageSet(key, value){
   try{ localStorage.setItem(key, value); }catch(e){ console.error('local save failed', e); }
 }
 
-async function saveProducts(sync=true){ await storageSet(STORAGE_PRODUCTS, JSON.stringify(products)); if(sync){ touchLocalUpdated(); scheduleCloudSync(); } }
-async function saveSales(sync=true){ await storageSet(STORAGE_SALES, JSON.stringify(sales)); if(sync){ touchLocalUpdated(); scheduleCloudSync(); } }
-async function saveCustomers(sync=true){ await storageSet(STORAGE_CUSTOMERS, JSON.stringify(customers)); if(sync){ touchLocalUpdated(); scheduleCloudSync(); } }
+async function saveProducts(sync=true){ await storageSet(STORAGE_PRODUCTS, JSON.stringify(products)); if(sync){ touchLocalUpdated(); scheduleFirebaseSync(); } }
+async function saveSales(sync=true){ await storageSet(STORAGE_SALES, JSON.stringify(sales)); if(sync){ touchLocalUpdated(); scheduleFirebaseSync(); } }
+async function saveCustomers(sync=true){ await storageSet(STORAGE_CUSTOMERS, JSON.stringify(customers)); if(sync){ touchLocalUpdated(); scheduleFirebaseSync(); } }
 
-// ---------- Cloud sync ----------
-// Everything still saves to this device first (via storageSet above), so
-// the app keeps working offline. When signed in to Google Drive and the
-// device is online, changes also get pushed there so the same data can be
-// pulled down on another device. Whichever side (local vs cloud) changed
-// most recently wins, based on the updatedAt timestamp stored alongside
-// the data.
-const LOCAL_UPDATED_KEY = 'ledger:updatedAt';
-let cloudSyncTimer = null;
-
-function touchLocalUpdated(){ try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(Date.now())); }catch(e){} }
-function getLocalUpdatedAt(){ return parseInt(localStorage.getItem(LOCAL_UPDATED_KEY) || '0', 10); }
-
-function scheduleCloudSync(){
-  if(!isDriveConnected()) return;
-  clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(()=>{ pushToDrive(); }, 1200);
-}
-
-// Compares local vs Google Drive and keeps whichever changed most
-// recently, then makes sure the other side matches it.
-async function syncWithCloud(){
-  if(!isDriveConnected() || !navigator.onLine){ renderDriveStatus(); return; }
-  renderDriveStatus('syncing');
-  const remote = await pullFromDrive();
-  if(remote){
-    const remoteUpdatedAt = remote.updatedAt || 0;
-    const localUpdatedAt = getLocalUpdatedAt();
-    if(remoteUpdatedAt > localUpdatedAt){
-      products = remote.products || products;
-      sales = remote.sales || sales;
-      customers = remote.customers || customers;
-      sales.forEach(s=>{
-        if(typeof s.customerId === 'undefined') s.customerId = '';
-        if(typeof s.paid === 'undefined') s.paid = true;
-      });
-      await saveProducts(false);
-      await saveSales(false);
-      await saveCustomers(false);
-      localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteUpdatedAt));
-      renderAll();
-      showToast('Pulled latest data from Google Drive');
-    }
-  }
-  await pushToDrive();
-}
-
-function timeAgo(ts){
-  const s = Math.floor((Date.now()-ts)/1000);
-  if(s < 60) return 'just now';
-  const m = Math.floor(s/60);
-  if(m < 60) return `${m}m ago`;
-  const h = Math.floor(m/60);
-  if(h < 24) return `${h}h ago`;
-  return `${Math.floor(h/24)}d ago`;
-}
-
-document.getElementById('cloudPill').addEventListener('click', ()=>{
-  document.getElementById('cloudPanel').classList.toggle('open');
-});
-document.addEventListener('click', (e)=>{
-  const panel = document.getElementById('cloudPanel');
+// Cloud panel: inline onclick above is the primary handler; this guarded
+// listener also keeps normal click behavior working if the inline handler is removed.
+(() => {
   const pill = document.getElementById('cloudPill');
-  if(panel.classList.contains('open') && !panel.contains(e.target) && !pill.contains(e.target)){
-    panel.classList.remove('open');
-  }
-});
-window.addEventListener('online', ()=>{ renderDriveStatus(); syncWithCloud(); });
-window.addEventListener('offline', ()=>{ renderDriveStatus(); });
+  const panel = document.getElementById('cloudPanel');
+  if (!pill || !panel) return;
+  pill.addEventListener('click', e => e.stopPropagation());
+  panel.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => panel.classList.remove('open'));
+})();
 
-// ---------- Cloud sync (Google Drive) ----------
-// Stores one JSON file in the app's private Drive "appDataFolder" (a hidden
-// space only this app can see - it does not show up in the user's normal
-// Drive file list). Uses Google Identity Services for sign-in; the access
-// token lives only in memory and is silently re-requested as needed, so
-// nothing sensitive is written to localStorage besides a "connected" flag
-// and the Drive file's ID.
-const GOOGLE_CLIENT_ID = '1006084953887-ksp602ec26n5a06ekiqboqtv0lvaib00.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-const DRIVE_CONNECTED_KEY = 'ledger:driveConnected';
-const DRIVE_FILE_KEY = 'ledger:driveFileId';
-const DRIVE_LAST_SYNC_KEY = 'ledger:driveLastSynced';
-const DRIVE_FILE_NAME = 'rs-tasty-foods-data.json';
+// ---------- Firebase Firestore cloud sync ----------
+// Firebase Authentication supports Google OAuth and email/password.
+// Firestore keeps one app document per signed-in user and onSnapshot provides
+// real-time sync between devices.
+//
+// IMPORTANT: replace the placeholder values below with the Web App config from
+// Firebase Console > Project settings > Your apps > Web app. These values are
+// safe to ship in a web/APK client; Firestore Security Rules protect the data.
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAE-fxMWTz0jPgVS8sOj2o2wK1MS48K0lc',
+  authDomain: 'rs-tasty-foods-data.firebaseapp.com',
+  projectId: 'rs-tasty-foods-data',
+  storageBucket: 'rs-tasty-foods-data.firebasestorage.app',
+  messagingSenderId: '206375699257',
+  appId: '1:206375699257:web:1c9d3c7775ecd837219ee8'
+};
 
-// GitHub Pages callback used only by the WebToAPK/external-browser fallback.
-const OAUTH_CALLBACK_URL = 'https://mdrasithali.github.io/RS-TASTY-FOODS/oauth-callback.html';
-const OAUTH_STATE_KEY = 'ledger:oauthState';
-
-let gTokenClient = null;
-let gAccessToken = null;
-let gTokenExpiry = 0;
-
-function isDriveConnected(){ return !!localStorage.getItem(DRIVE_CONNECTED_KEY); }
-function getDriveLastSynced(){ return parseInt(localStorage.getItem(DRIVE_LAST_SYNC_KEY) || '0', 10); }
+const FIREBASE_LAST_SYNC_KEY = 'ledger:firebaseLastSynced';
+let firebaseReady = false;
+let firebaseUser = null;
+let firebaseUnsubscribe = null;
+let firebaseSyncTimer = null;
+let firebaseWriteInProgress = false;
+let firebaseGoogleProvider = null;
+let firebaseRedirectChecked = false;
 
 function isEmbeddedWebView(){
   const ua = navigator.userAgent || '';
-  return /\bwv\b|; wv\)|WebView/i.test(ua) ||
-    (/Android/i.test(ua) && /Version\/4\.0/i.test(ua) && /Chrome/i.test(ua));
+  return /; wv\)|\bwv\b|WebView/i.test(ua) || (window.Android && !/Chrome\//i.test(ua));
 }
 
-function makeOAuthState(){
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  const state = Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
-  localStorage.setItem(OAUTH_STATE_KEY, state);
-  return state;
-}
-function getOAuthState(){ return localStorage.getItem(OAUTH_STATE_KEY) || ''; }
-function clearOAuthState(){ localStorage.removeItem(OAUTH_STATE_KEY); }
-
-function handleNativeOAuthCallback(){
-  const hash = new URLSearchParams(window.location.hash.substring(1));
-  const query = new URLSearchParams(window.location.search.substring(1));
-  const params = hash.has('access_token') ? hash : query;
-  const token = params.get('access_token');
-  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
-  const state = params.get('state') || '';
-
-  if(!token) return false;
-
-  const expectedState = getOAuthState();
-  if(!expectedState || !state || state !== expectedState){
-    showToast('Google sign-in could not be verified');
-    return false;
-  }
-
-  clearOAuthState();
-  gAccessToken = token;
-  gTokenExpiry = Date.now() + Math.max(60, expiresIn - 60) * 1000;
-  localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
-
-  // Remove the token from the address bar immediately.
-  history.replaceState({}, document.title, window.location.pathname);
-
-  setTimeout(async ()=>{
-    initDriveUI();
-    renderDriveStatus('connected');
-    showToast('Google Drive connected');
-    await syncWithCloud();
-  }, 0);
-  return true;
+function friendlyFirebaseAuthError(e){
+  const code = e && e.code ? e.code : '';
+  const message = e && e.message ? e.message : '';
+  const map = {
+    'auth/popup-closed-by-user':'Google sign-in was cancelled.',
+    'auth/popup-blocked':'The Google sign-in window was blocked. Please allow pop-ups and try again.',
+    'auth/unauthorized-domain':'This website is not authorized in Firebase. Add its domain under Firebase Authentication → Settings → Authorized domains.',
+    'auth/operation-not-allowed':'Google sign-in is not enabled. Enable Google under Firebase Authentication → Sign-in method.',
+    'auth/account-exists-with-different-credential':'An account already exists with the same email using another sign-in method.',
+    'auth/network-request-failed':'Network error. Check your internet connection and try again.',
+    'auth/invalid-api-key':'The Firebase API key is invalid. Check the Firebase Web App configuration.'
+  };
+  return map[code] || message || 'Google sign-in failed.';
 }
 
-function initGoogleAuth(){
-  if(!window.google || !google.accounts || !google.accounts.oauth2){
-    setTimeout(initGoogleAuth, 400);
-    return;
-  }
-  gTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: DRIVE_SCOPE,
-    callback: ()=>{}
+
+function isFirebaseConfigured(){
+  return FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith('YOUR_') &&
+    FIREBASE_CONFIG.projectId && !FIREBASE_CONFIG.projectId.startsWith('YOUR_') &&
+    FIREBASE_CONFIG.appId && !FIREBASE_CONFIG.appId.startsWith('YOUR_');
+}
+
+function isFirebaseConnected(){ return !!firebaseUser; }
+function showFirebaseError(message){
+  const el = document.getElementById('firebaseError');
+  if(el){ el.textContent = message || ''; el.style.display = message ? 'block' : 'none'; }
+}
+function clearFirebaseError(){ showFirebaseError(''); }
+function getFirebaseLastSynced(){ return parseInt(localStorage.getItem(FIREBASE_LAST_SYNC_KEY) || '0', 10); }
+
+function firebaseDocRef(){
+  return firebase.firestore().collection('users').doc(firebaseUser.uid).collection('apps').doc('rs-tasty-foods');
+}
+
+function scheduleFirebaseSync(){
+  if(!firebaseReady || !firebaseUser || !navigator.onLine) return;
+  clearTimeout(firebaseSyncTimer);
+  firebaseSyncTimer = setTimeout(()=>{ pushToFirebase(); }, 900);
+}
+
+function normalizeRemoteData(data){
+  const nextProducts = Array.isArray(data.products) ? data.products : products;
+  const nextSales = Array.isArray(data.sales) ? data.sales : sales;
+  const nextCustomers = Array.isArray(data.customers) ? data.customers : customers;
+  nextSales.forEach(s=>{
+    if(typeof s.customerId === 'undefined') s.customerId = '';
+    if(typeof s.paid === 'undefined') s.paid = true;
   });
+  return {products:nextProducts, sales:nextSales, customers:nextCustomers};
 }
 
-function ensureDriveToken(interactive){
-  return new Promise((resolve)=>{
-    if(gAccessToken && Date.now() < gTokenExpiry){ resolve(gAccessToken); return; }
-    if(!gTokenClient){ resolve(null); return; }
-    gTokenClient.callback = (resp)=>{
-      if(resp && resp.access_token){
-        gAccessToken = resp.access_token;
-        gTokenExpiry = Date.now() + Math.max(60, (resp.expires_in || 3600) - 60) * 1000;
-        localStorage.setItem(DRIVE_CONNECTED_KEY, '1');
-        resolve(gAccessToken);
-      }else resolve(null);
-    };
-    gTokenClient.error_callback = ()=>resolve(null);
-    gTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
-  });
+async function applyFirebaseData(data, toast=false){
+  const next = normalizeRemoteData(data || {});
+  products = next.products;
+  sales = next.sales;
+  customers = next.customers;
+  await saveProducts(false);
+  await saveSales(false);
+  await saveCustomers(false);
+  const ts = data.updatedAt || Date.now();
+  try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(ts)); }catch(e){}
+  try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
+  renderAll();
+  if(toast) showToast('Latest data loaded from Firebase');
 }
 
-// WebToAPK uses Android WebView. Google OAuth must run in the external browser,
-// not inside that WebView. The callback page then deep-links back into the APK.
-function signInFromExternalBrowser(){
-  const state = makeOAuthState();
-  const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: OAUTH_CALLBACK_URL,
-    response_type: 'token',
-    scope: DRIVE_SCOPE,
-    include_granted_scopes: 'true',
-    prompt: 'consent',
-    state,
-    disallow_webview: 'true'
-  });
-  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
-}
-
-async function signInGoogleDrive(){
-  if(isEmbeddedWebView()){
-    signInFromExternalBrowser();
-    return;
-  }
-  const token = await ensureDriveToken(true);
-  if(!token){ showToast('Google sign-in failed or was cancelled'); return; }
-  initDriveUI();
-  renderDriveStatus('connected');
-  showToast('Google Drive connected');
-  await syncWithCloud();
-}
-
-function disconnectGoogleDrive(){
-  if(gAccessToken && window.google) google.accounts.oauth2.revoke(gAccessToken, ()=>{});
-  gAccessToken = null; gTokenExpiry = 0;
-  clearOAuthState();
-  localStorage.removeItem(DRIVE_CONNECTED_KEY);
-  localStorage.removeItem(DRIVE_FILE_KEY);
-  localStorage.removeItem(DRIVE_LAST_SYNC_KEY);
-  renderDriveStatus();
-  showToast('Google Drive disconnected');
-}
-
-async function driveFindOrCreateFile(token){
-  const cached = localStorage.getItem(DRIVE_FILE_KEY);
-  if(cached) return cached;
-  const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and 'appDataFolder' in parents and trashed=false`);
-  const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=appDataFolder&fields=files(id,name)`, {
-    headers:{ Authorization: `Bearer ${token}` }
-  });
-  if(searchRes.ok){
-    const searchData = await searchRes.json();
-    if(searchData.files && searchData.files.length){
-      localStorage.setItem(DRIVE_FILE_KEY, searchData.files[0].id);
-      return searchData.files[0].id;
+function attachFirebaseListener(){
+  if(firebaseUnsubscribe) firebaseUnsubscribe();
+  if(!firebaseUser) return;
+  firebaseUnsubscribe = firebaseDocRef().onSnapshot(async snap=>{
+    if(!snap.exists){
+      await pushToFirebase(true);
+      return;
     }
-  }
-  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
-    method:'POST',
-    headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name: DRIVE_FILE_NAME, mimeType:'application/json', parents:['appDataFolder'] })
+    const data = snap.data() || {};
+    const remoteUpdatedAt = Number(data.updatedAt || 0);
+    const localUpdatedAt = getLocalUpdatedAt();
+    // Ignore an older remote snapshot. Our own write is allowed through.
+    if(remoteUpdatedAt >= localUpdatedAt || firebaseWriteInProgress){
+      await applyFirebaseData(data, false);
+    }
+    renderFirebaseStatus('synced');
+  }, err=>{
+    console.error('Firebase listener error', err);
+    const detail = [err && err.code ? err.code : 'unknown-error', err && err.message ? err.message : String(err)].join(': ');
+    showFirebaseError('Firestore read failed — ' + detail);
+    renderFirebaseStatus('error');
   });
-  if(!createRes.ok) return null;
-  const created = await createRes.json();
-  if(created.id){ localStorage.setItem(DRIVE_FILE_KEY, created.id); return created.id; }
-  return null;
 }
 
-async function pushToDrive(){
-  if(!navigator.onLine || !isDriveConnected()) return;
-  renderDriveStatus('syncing');
+async function pushToFirebase(force=false){
+  if(!firebaseReady || !firebaseUser || (!navigator.onLine && !force)) return;
+  renderFirebaseStatus('syncing');
+  firebaseWriteInProgress = true;
   try{
-    const token = await ensureDriveToken(false);
-    if(!token) throw new Error('no token');
-    const fileId = await driveFindOrCreateFile(token);
-    if(!fileId) throw new Error('no file');
-    const updatedAt = getLocalUpdatedAt() || Date.now();
-    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-      method:'PATCH',
-      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-      body: JSON.stringify({ products, sales, customers, updatedAt })
-    });
-    if(res.status === 401){
-      gAccessToken = null; gTokenExpiry = 0;
-      localStorage.removeItem(DRIVE_CONNECTED_KEY);
-      localStorage.removeItem(DRIVE_FILE_KEY);
-      throw new Error('authorization expired');
-    }
-    if(!res.ok) throw new Error('upload failed');
-    localStorage.setItem(DRIVE_LAST_SYNC_KEY, String(Date.now()));
-    renderDriveStatus('synced');
-  }catch(e){ renderDriveStatus('error'); }
+    const updatedAt = Math.max(getLocalUpdatedAt(), Date.now());
+    try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(updatedAt)); }catch(e){}
+    await firebaseDocRef().set({
+      products, sales, customers, updatedAt,
+      updatedAtServer: firebase.firestore.FieldValue.serverTimestamp(),
+      schemaVersion: 2
+    }, {merge:false});
+    localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now()));
+    renderFirebaseStatus('synced');
+  }catch(e){
+    console.error('Firebase write failed', e);
+    const detail = [e && e.code ? e.code : 'unknown-error', e && e.message ? e.message : String(e)].join(': ');
+    showFirebaseError('Firestore write failed — ' + detail);
+    renderFirebaseStatus('error');
+  }finally{
+    firebaseWriteInProgress = false;
+  }
 }
 
-async function pullFromDrive(){
-  if(!navigator.onLine || !isDriveConnected()) return null;
+async function signInFirebase(){
+  if(!firebaseReady){ showFirebaseError('Firebase is not ready. Check that the Firebase scripts loaded.'); showToast('Firebase is not ready'); return; }
+  const email = document.getElementById('firebaseEmail').value.trim();
+  const password = document.getElementById('firebasePassword').value;
+  if(!email || !password){ showToast('Enter your email and password'); return; }
   try{
-    const token = await ensureDriveToken(false);
-    if(!token) return null;
-    const fileId = await driveFindOrCreateFile(token);
-    if(!fileId) return null;
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers:{ Authorization: `Bearer ${token}` }
-    });
-    if(res.status === 401){
-      gAccessToken = null; gTokenExpiry = 0;
-      localStorage.removeItem(DRIVE_CONNECTED_KEY);
-      localStorage.removeItem(DRIVE_FILE_KEY);
-      return null;
-    }
-    if(!res.ok) return null;
-    const text = await res.text();
-    if(!text) return null;
-    return JSON.parse(text);
-  }catch(e){ return null; }
+    clearFirebaseError();
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    document.getElementById('firebasePassword').value = '';
+  }catch(e){
+    console.error(e);
+    const msg = e.code === 'auth/invalid-credential' ? 'Invalid email or password' : friendlyFirebaseAuthError(e);
+    showFirebaseError(msg);
+    showToast(msg);
+  }
 }
 
-function renderDriveStatus(state){
+async function signInWithGoogle(){
+  if(!firebaseReady){ showFirebaseError('Firebase is not ready. Check that the Firebase scripts loaded.'); showToast('Firebase is not ready'); return; }
+  try{
+    clearFirebaseError();
+    if(isEmbeddedWebView()){
+      const msg = 'Google sign-in cannot run inside this WebToAPK WebView. Open the GitHub Pages website in Chrome/another browser, sign in once, then return to the app.';
+      showFirebaseError(msg);
+      showToast('Open the website in Chrome for Google sign-in');
+      return;
+    }
+    if(!firebaseGoogleProvider) firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
+    firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
+    await firebase.auth().signInWithPopup(firebaseGoogleProvider);
+  }catch(e){
+    console.error('Google sign-in failed', e);
+    // If popup is unavailable, use Firebase redirect flow in a normal browser.
+    if(e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')){
+      try{
+        if(!firebaseGoogleProvider) firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
+        firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
+        await firebase.auth().signInWithRedirect(firebaseGoogleProvider);
+        return;
+      }catch(redirectError){
+        e = redirectError;
+      }
+    }
+    const msg = friendlyFirebaseAuthError(e);
+    showFirebaseError(msg);
+    showToast(msg);
+  }
+}
+
+async function createFirebaseAccount(){
+  if(!firebaseReady){ showFirebaseError('Firebase is not ready. Check that the Firebase scripts loaded.'); showToast('Firebase is not ready'); return; }
+  const email = document.getElementById('firebaseEmail').value.trim();
+  const password = document.getElementById('firebasePassword').value;
+  if(!email || password.length < 6){ showToast('Use an email and a password of at least 6 characters'); return; }
+  try{
+    clearFirebaseError();
+    await firebase.auth().createUserWithEmailAndPassword(email, password);
+    document.getElementById('firebasePassword').value = '';
+    showToast('Firebase account created');
+  }catch(e){
+    console.error(e);
+    showFirebaseError(e.message || 'Could not create account');
+    showToast(e.message || 'Could not create account');
+  }
+}
+
+async function signOutFirebase(){
+  try{ await firebase.auth().signOut(); }catch(e){ console.error(e); }
+}
+
+function renderFirebaseStatus(state){
   const pill = document.getElementById('cloudPill');
   const text = document.getElementById('cloudPillText');
   if(!pill || !text) return;
   pill.classList.remove('synced','offline','error','syncing');
-  if(!isDriveConnected()){ text.textContent = 'Cloud: not connected'; return; }
+  if(!isFirebaseConfigured()){ text.textContent = 'Cloud: setup required'; return; }
+  if(!firebaseReady){ text.textContent = 'Cloud: loading…'; return; }
+  if(!firebaseUser){ text.textContent = 'Cloud: not signed in'; return; }
   if(!navigator.onLine){ pill.classList.add('offline'); text.textContent = 'Cloud: offline (will sync)'; return; }
   if(state === 'syncing'){ pill.classList.add('syncing'); text.textContent = 'Cloud: syncing…'; return; }
   if(state === 'error'){ pill.classList.add('error'); text.textContent = 'Cloud: sync failed'; return; }
-  const last = getDriveLastSynced();
+  const last = getFirebaseLastSynced();
   pill.classList.add('synced');
   text.textContent = last ? `Cloud: synced ${timeAgo(last)}` : 'Cloud: connected';
 }
 
-function initDriveUI(){
-  if(isDriveConnected()){
-    document.getElementById('driveSignInBtn').textContent = 'Re-connect Google';
-    document.getElementById('driveSyncNowBtn').style.display = '';
-    document.getElementById('driveDisconnectBtn').style.display = '';
+async function initFirebaseUI(){
+  const form = document.getElementById('firebaseAuthForm');
+  const signOutBtn = document.getElementById('firebaseSignOutBtn');
+  const syncBtn = document.getElementById('firebaseSyncNowBtn');
+  if(!isFirebaseConfigured()){
+    renderFirebaseStatus();
+    return;
   }
-  renderDriveStatus();
+  try{
+    if(!window.firebase || !firebase.apps){ throw new Error('Firebase scripts did not load.'); }
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
+    firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
+    await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    firebase.firestore().enablePersistence({synchronizeTabs:true}).catch(e=>{ console.warn('Firestore persistence unavailable:', e && e.code, e && e.message); });
+    firebaseReady = true;
+
+    // Complete a Google sign-in that used redirect mode.
+    if(!firebaseRedirectChecked){
+      firebaseRedirectChecked = true;
+      try{ await firebase.auth().getRedirectResult(); }catch(e){
+        console.error('Google redirect result failed', e);
+        showFirebaseError(friendlyFirebaseAuthError(e));
+      }
+    }
+
+    firebase.auth().onAuthStateChanged(user=>{
+      firebaseUser = user;
+      if(user){
+        form.style.display = 'none';
+        signOutBtn.style.display = '';
+        syncBtn.style.display = '';
+        document.getElementById('saveHint').textContent = `Changes save automatically and sync across devices (${user.email || 'Google account'}).`;
+        attachFirebaseListener();
+        renderFirebaseStatus('syncing');
+        scheduleFirebaseSync();
+      }else{
+        if(firebaseUnsubscribe) firebaseUnsubscribe();
+        firebaseUnsubscribe = null;
+        form.style.display = '';
+        signOutBtn.style.display = 'none';
+        syncBtn.style.display = 'none';
+        document.getElementById('saveHint').textContent = 'Changes save automatically on this device. Sign in to sync with Firebase.';
+        renderFirebaseStatus();
+      }
+    });
+  }catch(e){
+    console.error('Firebase initialization failed', e);
+    firebaseReady = false;
+    showFirebaseError('Firebase initialization failed: ' + friendlyFirebaseAuthError(e));
+    renderFirebaseStatus('error');
+  }
 }
 
-document.getElementById('driveSignInBtn').addEventListener('click', signInGoogleDrive);
-document.getElementById('driveSyncNowBtn').addEventListener('click', async ()=>{ await syncWithCloud(); showToast('Synced with Google Drive'); });
-document.getElementById('driveDisconnectBtn').addEventListener('click', ()=>{
-  disconnectGoogleDrive();
-  document.getElementById('driveSignInBtn').textContent = 'Sign in with Google';
-  document.getElementById('driveSyncNowBtn').style.display = 'none';
-  document.getElementById('driveDisconnectBtn').style.display = 'none';
-});
+document.getElementById('firebaseGoogleBtn')?.addEventListener('click', signInWithGoogle);
+document.getElementById('firebaseSignInBtn')?.addEventListener('click', signInFirebase);
+document.getElementById('firebaseCreateBtn')?.addEventListener('click', createFirebaseAccount);
+document.getElementById('firebaseSyncNowBtn')?.addEventListener('click', async ()=>{ await pushToFirebase(true); });
+document.getElementById('firebaseSignOutBtn')?.addEventListener('click', signOutFirebase);
+document.getElementById('firebasePassword')?.addEventListener('keydown', e=>{ if(e.key==='Enter') signInFirebase(); });
+window.addEventListener('online', ()=>{ renderFirebaseStatus(); scheduleFirebaseSync(); });
+window.addEventListener('offline', ()=>{ renderFirebaseStatus(); });
 
 function productById(id){ return products.find(p=>p.id===id); }
 function customerById(id){ return customers.find(c=>c.id===id); }
@@ -1995,13 +1992,11 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
 
 (async function init(){
   document.getElementById('saleDate').value = new Date().toISOString().slice(0,10);
-  const returnedFromOAuth = handleNativeOAuthCallback();
   await loadData();
   renderAll();
-  initDriveUI();
-  initGoogleAuth();
-  if(returnedFromOAuth) return;
-  if(isDriveConnected()) await syncWithCloud();
+  await initFirebaseUI();
+  renderFirebaseStatus();
+  if(firebaseReady && firebaseUser) attachFirebaseListener();
 })();
 </script>
 
