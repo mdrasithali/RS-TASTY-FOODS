@@ -1162,6 +1162,7 @@ const FIREBASE_CONFIG = {
 };
 
 const FIREBASE_LAST_SYNC_KEY = 'ledger:firebaseLastSynced';
+const FIREBASE_MIGRATION_KEY = 'ledger:firebaseMigrationComplete';
 let firebaseReady = false;
 let firebaseUser = null;
 let firebaseUnsubscribe = null;
@@ -1241,21 +1242,94 @@ async function applyFirebaseData(data, toast=false){
   if(toast) showToast('Latest data loaded from Firebase');
 }
 
+function hasLocalUserData(){
+  return (Array.isArray(sales) && sales.length > 0) ||
+         (Array.isArray(customers) && customers.length > 0) ||
+         (Array.isArray(products) && products.length > 0 &&
+          JSON.stringify(products) !== JSON.stringify(DEFAULT_PRODUCTS.map((x,i)=>({id:'p'+i,name:x[0],cost:x[1],courier:x[2],price:x[3]}))));
+}
+
+function hasRemoteUserData(data){
+  return (Array.isArray(data && data.sales) && data.sales.length > 0) ||
+         (Array.isArray(data && data.customers) && data.customers.length > 0) ||
+         (Array.isArray(data && data.products) && data.products.length > 0 &&
+          data.products.some(p => p && p.id && !/^p\d+$/.test(String(p.id))));
+}
+
+function mergeRecords(remoteList, localList){
+  const out = [];
+  const byId = new Map();
+  [...(Array.isArray(remoteList) ? remoteList : []), ...(Array.isArray(localList) ? localList : [])].forEach(item=>{
+    if(!item) return;
+    const key = item.id != null ? String(item.id) : JSON.stringify(item);
+    if(byId.has(key)){
+      const idx = byId.get(key);
+      out[idx] = item; // local list comes second, so local wins on duplicate IDs
+    }else{
+      byId.set(key, out.length);
+      out.push(item);
+    }
+  });
+  return out;
+}
+
+function migrationComplete(){
+  try{ return localStorage.getItem(FIREBASE_MIGRATION_KEY) === '1'; }catch(e){ return false; }
+}
+function markMigrationComplete(){
+  try{ localStorage.setItem(FIREBASE_MIGRATION_KEY, '1'); }catch(e){}
+}
+
 function attachFirebaseListener(){
   if(firebaseUnsubscribe) firebaseUnsubscribe();
   if(!firebaseUser) return;
   firebaseUnsubscribe = firebaseDocRef().onSnapshot(async snap=>{
     if(!snap.exists){
       await pushToFirebase(true);
+      markMigrationComplete();
       return;
     }
     const data = snap.data() || {};
+
+    // First Google/Firebase sync: never replace existing local records with an
+    // empty/older cloud document. Merge local records into the cloud document
+    // so data created before Google sign-in is preserved.
+    if(!migrationComplete() && hasLocalUserData()){
+      const merged = {
+        products: mergeRecords(data.products, products),
+        sales: mergeRecords(data.sales, sales),
+        customers: mergeRecords(data.customers, customers),
+        updatedAt: Math.max(Number(data.updatedAt || 0), getLocalUpdatedAt(), Date.now()),
+        schemaVersion: 2
+      };
+      products = merged.products;
+      sales = merged.sales;
+      customers = merged.customers;
+      try{
+        await firebaseDocRef().set({...merged, updatedAtServer: firebase.firestore.FieldValue.serverTimestamp()}, {merge:false});
+        await saveProducts(false);
+        await saveSales(false);
+        await saveCustomers(false);
+        try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(merged.updatedAt)); }catch(e){}
+        try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
+        markMigrationComplete();
+        renderAll();
+        renderFirebaseStatus('synced');
+        showToast('Previous local data preserved and synced');
+        return;
+      }catch(e){
+        console.error('Firebase migration write failed', e);
+        // Fall through to normal sync error handling below.
+      }
+    }
+
     const remoteUpdatedAt = Number(data.updatedAt || 0);
     const localUpdatedAt = getLocalUpdatedAt();
     // Ignore an older remote snapshot. Our own write is allowed through.
     if(remoteUpdatedAt >= localUpdatedAt || firebaseWriteInProgress){
       await applyFirebaseData(data, false);
     }
+    markMigrationComplete();
     renderFirebaseStatus('synced');
   }, err=>{
     console.error('Firebase listener error', err);
