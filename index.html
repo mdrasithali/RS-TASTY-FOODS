@@ -625,6 +625,17 @@
 }
 
 
+
+  /* Owner-only join request flow */
+  .join-request-box{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fffaf0;}
+  .join-request-box .request-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px;}
+  .join-request-item{padding:8px 0;border-top:1px dashed var(--line);}
+  .join-request-item:first-child{border-top:none;}
+  .join-request-email{font-size:12px;font-weight:600;word-break:break-word;}
+  .join-request-actions{display:flex;gap:6px;margin-top:6px;}
+  .join-request-actions .btn{flex:1;padding:7px 9px;font-size:12px;}
+  .owner-badge{display:inline-block;margin-left:5px;padding:2px 6px;border-radius:8px;background:#E4F0E6;color:var(--green);font-size:9px;font-weight:700;text-transform:uppercase;}
+
 .front-unpaid-filter{
   margin:10px 0 12px;
   padding:10px 12px;
@@ -711,6 +722,14 @@
             <span class="dot"></span><span id="cloudPillText">Cloud: not connected</span>
           </button>
           <div class="cloud-panel" id="cloudPanel">
+            <div style="margin:0 0 12px;">
+              <label style="display:block; font-size:11px; font-weight:600; color:var(--ink-soft); margin-bottom:4px; text-transform:uppercase; letter-spacing:.04em;">Sync group</label>
+              <div style="display:flex; gap:6px;">
+                <input id="workspaceIdInput" type="text" placeholder="e.g. my-shop" style="flex:1;">
+                <button class="btn btn-ghost" id="workspaceSaveBtn" type="button" style="white-space:nowrap;">Save</button>
+              </div>
+              <p style="font-size:11px; color:var(--ink-soft); margin:6px 0 0;">Devices/accounts using the same sync group share the same data. Use a different sync group to keep data separate.</p>
+            </div>
             <p class="cloud-note">Sign in with your email and password to sync products, sales and customers across devices.</p>
             <div id="firebaseAuthForm">
               <div id="firebaseError" style="display:none; margin:0 0 8px; padding:8px; border-radius:8px; font-size:12px; background:#fff3f3; color:#b42318;"></div>
@@ -720,6 +739,31 @@
                 <button class="btn btn-ghost" id="firebaseSignInBtn" type="button">Sign in</button>
                 <button class="btn btn-ghost" id="firebaseCreateBtn" type="button">Create account</button>
               </div>
+            </div>
+
+            <p id="workspaceAccessStatus" style="display:none; font-size:12px; color:var(--ink-soft); margin:10px 0 0;"></p>
+            <button class="btn btn-ghost" id="workspaceCreateBtn" type="button" style="display:none; width:100%; margin-top:8px;">Create this sync group</button>
+
+            <div id="workspaceJoinWrap" class="join-request-box" style="display:none;">
+              <div class="request-title">Join this sync group</div>
+              <p id="workspaceJoinStatus" style="font-size:11.5px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px;">You are not a member. Send a join request to the group owner.</p>
+              <button class="btn btn-primary" id="workspaceRequestJoinBtn" type="button" style="width:100%;">Request to join</button>
+            </div>
+
+            <div id="workspaceMembersWrap" style="display:none; margin-top:10px;">
+              <label style="display:block; font-size:11px; font-weight:600; color:var(--ink-soft); margin-bottom:4px; text-transform:uppercase; letter-spacing:.04em;">Members</label>
+              <div id="workspaceMembersList" style="margin-bottom:8px;"></div>
+              <div id="workspaceOwnerAddWrap" style="display:none;">
+                <div style="display:flex; gap:6px;">
+                  <input id="workspaceAddMemberInput" type="email" placeholder="Add member by email" style="flex:1;">
+                  <button class="btn btn-ghost" id="workspaceAddMemberBtn" type="button" style="white-space:nowrap;">Add</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="workspaceRequestsWrap" class="join-request-box" style="display:none;">
+              <div class="request-title">Pending join requests</div>
+              <div id="workspaceRequestsList"></div>
             </div>
             <div class="cloud-actions" style="margin-top:8px;">
               <button class="btn btn-ghost" id="firebaseSyncNowBtn" type="button" style="display:none;">Sync now</button>
@@ -1171,8 +1215,22 @@ const FIREBASE_CONFIG = {
   appId: '1:206375699257:web:1c9d3c7775ecd837219ee8'
 };
 
-const FIREBASE_LAST_SYNC_KEY = 'ledger:firebaseLastSynced';
-const FIREBASE_MIGRATION_KEY = 'ledger:firebaseMigrationComplete';
+const WORKSPACE_ID_KEY = 'ledger:workspaceId';
+const DEFAULT_WORKSPACE_ID = 'rs-tasty-foods';
+
+function getWorkspaceId(){
+  try{
+    const v = (localStorage.getItem(WORKSPACE_ID_KEY) || '').trim();
+    return v || DEFAULT_WORKSPACE_ID;
+  }catch(e){ return DEFAULT_WORKSPACE_ID; }
+}
+function setWorkspaceIdRaw(id){
+  const clean = (id || '').trim() || DEFAULT_WORKSPACE_ID;
+  try{ localStorage.setItem(WORKSPACE_ID_KEY, clean); }catch(e){}
+  return clean;
+}
+function firebaseLastSyncKey(){ return 'ledger:firebaseLastSynced:' + getWorkspaceId(); }
+function firebaseMigrationKey(){ return 'ledger:firebaseMigrationComplete:' + getWorkspaceId(); }
 let firebaseReady = false;
 let firebaseUser = null;
 let firebaseUnsubscribe = null;
@@ -1204,14 +1262,365 @@ function showFirebaseError(message){
   if(el){ el.textContent = message || ''; el.style.display = message ? 'block' : 'none'; }
 }
 function clearFirebaseError(){ showFirebaseError(''); }
-function getFirebaseLastSynced(){ return parseInt(localStorage.getItem(FIREBASE_LAST_SYNC_KEY) || '0', 10); }
+function getFirebaseLastSynced(){ return parseInt(localStorage.getItem(firebaseLastSyncKey()) || '0', 10); }
+
+function workspaceMetaRef(){
+  return firebase.firestore().collection('workspaces').doc(getWorkspaceId());
+}
 
 function firebaseDocRef(){
-  return firebase.firestore().collection('users').doc(firebaseUser.uid).collection('apps').doc('rs-tasty-foods');
+  // Actual app data lives in a sub-document of the workspace, separate from
+  // the membership list, so frequent data writes never touch `members`.
+  return workspaceMetaRef().collection('appData').doc('main');
+}
+
+function currentUserEmail(){
+  return firebaseUser && firebaseUser.email ? firebaseUser.email.toLowerCase() : null;
+}
+
+let workspaceMetaUnsubscribe = null;
+let workspaceJoinRequestUnsubscribe = null;
+let workspaceRequestsUnsubscribe = null;
+let workspaceMembers = [];
+let workspaceOwnerEmail = null;
+      workspaceOwnerUid = data.ownerUid || '';
+      if (!workspaceOwnerUid && firebaseUser?.email && workspaceOwnerEmail &&
+          workspaceOwnerEmail.toLowerCase() === firebaseUser.email.toLowerCase()) {
+        workspaceOwnerUid = firebaseUser.uid;
+        try {
+          await workspaceMetaRef().update({ ownerUid: firebaseUser.uid });
+        } catch (e) {
+          console.warn('Could not migrate workspace ownerUid:', e);
+        }
+      }
+
+let workspaceJoinRequest = null;
+let workspaceRequests = [];
+let workspaceAccessState = 'unknown'; // unknown | member | not-member | not-found | error
+
+function renderWorkspaceUI(){
+  const input = document.getElementById('workspaceIdInput');
+  if(input && document.activeElement !== input) input.value = getWorkspaceId();
+}
+
+function switchWorkspace(newId){
+  const clean = setWorkspaceIdRaw(newId);
+  renderWorkspaceUI();
+  workspaceAccessState = 'unknown';
+  workspaceMembers = [];
+  workspaceOwnerEmail = null;
+  workspaceJoinRequest = null;
+  workspaceRequests = [];
+  if(workspaceJoinRequestUnsubscribe){ workspaceJoinRequestUnsubscribe(); workspaceJoinRequestUnsubscribe = null; }
+  if(workspaceRequestsUnsubscribe){ workspaceRequestsUnsubscribe(); workspaceRequestsUnsubscribe = null; }
+  renderWorkspaceAccessUI();
+  if(firebaseUnsubscribe){ firebaseUnsubscribe(); firebaseUnsubscribe = null; }
+  if(firebaseReady && firebaseUser){
+    renderFirebaseStatus('syncing');
+    attachWorkspaceMetaListener();
+  }
+  showToast('Sync group set to "' + clean + '"');
+}
+
+function isWorkspaceOwner() {
+      if (!firebaseUser || !workspaceOwnerUid) return false;
+      return workspaceOwnerUid === firebaseUser.uid;
+    }
+
+function workspaceJoinRequestsRef(){
+  return workspaceMetaRef().collection('joinRequests');
+}
+
+function workspaceOwnJoinRequestRef(){
+  const uid = firebaseUser && firebaseUser.uid;
+  return uid ? workspaceJoinRequestsRef().doc(uid) : null;
+}
+
+function attachWorkspaceJoinRequestListener(){
+  if(workspaceJoinRequestUnsubscribe){ workspaceJoinRequestUnsubscribe(); workspaceJoinRequestUnsubscribe = null; }
+  workspaceJoinRequest = null;
+  if(!firebaseUser || workspaceAccessState === 'member' || workspaceAccessState === 'not-found') return;
+  const ref = workspaceOwnJoinRequestRef();
+  if(!ref) return;
+  workspaceJoinRequestUnsubscribe = ref.onSnapshot(snap=>{
+    workspaceJoinRequest = snap.exists ? {id:snap.id, ...(snap.data() || {})} : null;
+    renderWorkspaceAccessUI();
+  }, err=>console.warn('Join request listener failed:', err));
+}
+
+function attachWorkspaceRequestsListener(){
+  if(workspaceRequestsUnsubscribe){ workspaceRequestsUnsubscribe(); workspaceRequestsUnsubscribe = null; }
+  workspaceRequests = [];
+  if(!firebaseUser || !isWorkspaceOwner()) return;
+  workspaceRequestsUnsubscribe = workspaceJoinRequestsRef().where('status','==','pending').onSnapshot(snap=>{
+    workspaceRequests = snap.docs.map(d=>({id:d.id, ...(d.data() || {})}));
+    renderWorkspaceAccessUI();
+  }, err=>{
+    console.error('Join requests listener failed:', err);
+    workspaceRequests = [];
+    renderWorkspaceAccessUI();
+  });
+}
+
+function attachWorkspaceMetaListener(){
+  if(workspaceMetaUnsubscribe){ workspaceMetaUnsubscribe(); workspaceMetaUnsubscribe = null; }
+  if(firebaseUnsubscribe){ firebaseUnsubscribe(); firebaseUnsubscribe = null; }
+  if(workspaceJoinRequestUnsubscribe){ workspaceJoinRequestUnsubscribe(); workspaceJoinRequestUnsubscribe = null; }
+  if(workspaceRequestsUnsubscribe){ workspaceRequestsUnsubscribe(); workspaceRequestsUnsubscribe = null; }
+  if(!firebaseUser) return;
+
+  workspaceAccessState = 'unknown';
+  workspaceMembers = [];
+  workspaceOwnerEmail = null;
+  workspaceJoinRequest = null;
+  workspaceRequests = [];
+  renderWorkspaceAccessUI();
+
+  workspaceMetaUnsubscribe = workspaceMetaRef().onSnapshot(snap=>{
+    if(!snap.exists){
+      workspaceAccessState = 'not-found';
+      workspaceMembers = [];
+      workspaceOwnerEmail = null;
+      renderWorkspaceAccessUI();
+      renderFirebaseStatus();
+      return;
+    }
+
+    const data = snap.data() || {};
+    workspaceMembers = Array.isArray(data.members) ? data.members : [];
+    workspaceOwnerEmail = data.ownerEmail ? String(data.ownerEmail).toLowerCase() : null;
+
+    const email = currentUserEmail();
+    const isMember = !!email && workspaceMembers.map(m=>String(m).toLowerCase()).includes(email);
+
+    if(isMember){
+      workspaceAccessState = 'member';
+      renderWorkspaceAccessUI();
+      attachFirebaseListener();
+      attachWorkspaceRequestsListener();
+      if(workspaceJoinRequestUnsubscribe){ workspaceJoinRequestUnsubscribe(); workspaceJoinRequestUnsubscribe = null; }
+      workspaceJoinRequest = null;
+      renderWorkspaceAccessUI();
+    }else{
+      workspaceAccessState = 'not-member';
+      renderWorkspaceAccessUI();
+      attachWorkspaceJoinRequestListener();
+      if(firebaseUnsubscribe){ firebaseUnsubscribe(); firebaseUnsubscribe = null; }
+      renderFirebaseStatus();
+    }
+  }, err=>{
+    console.error('Workspace access check failed', err);
+    workspaceMembers = [];
+    workspaceOwnerEmail = null;
+    workspaceAccessState = (err && err.code === 'permission-denied') ? 'not-member' : 'error';
+    renderWorkspaceAccessUI();
+    renderFirebaseStatus(workspaceAccessState === 'error' ? 'error' : undefined);
+  });
+}
+
+async function createWorkspace(){
+  const email = currentUserEmail();
+  if(!email){ showToast('Sign in first'); return; }
+  try{
+    await workspaceMetaRef().set({
+      members: [email],
+      ownerEmail: email,
+      
+        ownerUid: firebaseUser.uid,createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast('Sync group created — you are the owner');
+  }catch(e){
+    console.error('Create workspace failed', e);
+    showFirebaseError('Could not create sync group: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+async function requestWorkspaceJoin(){
+  if(!firebaseUser){ showToast('Sign in first'); return; }
+  if(workspaceAccessState !== 'not-member'){ showToast('Join request is not available here'); return; }
+  const email = currentUserEmail();
+  const ref = workspaceOwnJoinRequestRef();
+  if(!email || !ref) return;
+
+  try{
+    await ref.set({
+      uid: firebaseUser.uid,
+      email,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    showToast('Join request sent to the owner');
+    renderWorkspaceAccessUI();
+  }catch(e){
+    console.error('Join request failed', e);
+    showFirebaseError('Could not send join request: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+async function approveWorkspaceJoin(requestId, email){
+  if(!isWorkspaceOwner()){ showToast('Only the group owner can approve requests'); return; }
+  const clean = String(email || '').trim().toLowerCase();
+  if(!requestId || !clean) return;
+
+  try{
+    const batch = firebase.firestore().batch();
+    batch.update(workspaceMetaRef(), {members: firebase.firestore.FieldValue.arrayUnion(clean)});
+    batch.update(workspaceJoinRequestsRef().doc(requestId), {
+      status: 'approved',
+      reviewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: currentUserEmail()
+    });
+    await batch.commit();
+    showToast('Approved ' + clean);
+  }catch(e){
+    console.error('Approve join request failed', e);
+    showFirebaseError('Could not approve request: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+async function rejectWorkspaceJoin(requestId, email){
+  if(!isWorkspaceOwner()){ showToast('Only the group owner can reject requests'); return; }
+  if(!requestId) return;
+  try{
+    await workspaceJoinRequestsRef().doc(requestId).update({
+      status: 'rejected',
+      reviewedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: currentUserEmail()
+    });
+    showToast('Rejected ' + (email || 'request'));
+  }catch(e){
+    console.error('Reject join request failed', e);
+    showFirebaseError('Could not reject request: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+async function addWorkspaceMember(email){
+  if(!isWorkspaceOwner()){ showToast('Only the group owner can add members'); return; }
+  const clean = (email || '').trim().toLowerCase();
+  if(!clean || !clean.includes('@')){ showToast('Enter a valid email address'); return; }
+  try{
+    await workspaceMetaRef().update({members: firebase.firestore.FieldValue.arrayUnion(clean)});
+    showToast('Added ' + clean + ' to the sync group');
+  }catch(e){
+    console.error('Add member failed', e);
+    showFirebaseError('Could not add member: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+async function removeWorkspaceMember(email){
+  if(!isWorkspaceOwner()){ showToast('Only the group owner can remove members'); return; }
+  if(workspaceMembers.length <= 1){ showToast('A sync group needs at least one member'); return; }
+  if(String(email).toLowerCase() === String(workspaceOwnerEmail || '').toLowerCase()){
+    showToast('The owner cannot be removed');
+    return;
+  }
+  try{
+    await workspaceMetaRef().update({members: firebase.firestore.FieldValue.arrayRemove(email)});
+    showToast('Removed ' + email);
+  }catch(e){
+    console.error('Remove member failed', e);
+    showFirebaseError('Could not remove member: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function renderWorkspaceAccessUI(){
+  const statusEl = document.getElementById('workspaceAccessStatus');
+  const createBtn = document.getElementById('workspaceCreateBtn');
+  const membersWrap = document.getElementById('workspaceMembersWrap');
+  const listEl = document.getElementById('workspaceMembersList');
+  const joinWrap = document.getElementById('workspaceJoinWrap');
+  const joinStatus = document.getElementById('workspaceJoinStatus');
+  const requestJoinBtn = document.getElementById('workspaceRequestJoinBtn');
+  const ownerAddWrap = document.getElementById('workspaceOwnerAddWrap');
+  const requestsWrap = document.getElementById('workspaceRequestsWrap');
+  const requestsList = document.getElementById('workspaceRequestsList');
+  if(!statusEl || !createBtn || !membersWrap || !listEl || !joinWrap || !joinStatus || !requestJoinBtn || !requestsWrap || !requestsList) return;
+
+  statusEl.style.display = 'none';
+  createBtn.style.display = 'none';
+  membersWrap.style.display = 'none';
+  joinWrap.style.display = 'none';
+  requestsWrap.style.display = 'none';
+  if(ownerAddWrap) ownerAddWrap.style.display = 'none';
+  listEl.innerHTML = '';
+  requestsList.innerHTML = '';
+
+  if(!firebaseUser) return;
+
+  if(workspaceAccessState === 'member'){
+    const owner = isWorkspaceOwner();
+    membersWrap.style.display = '';
+
+    listEl.innerHTML = workspaceMembers.map(m => {
+      const isOwner = String(m).toLowerCase() === String(workspaceOwnerEmail || '').toLowerCase();
+      return `<div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:12.5px;">
+        <span>${escapeHtml(m)}${isOwner ? '<span class="owner-badge">Owner</span>' : ''}</span>
+        ${owner && !isOwner ? `<button class="btn-danger-text remove-member-btn" data-email="${escapeHtml(m)}" type="button">Remove</button>` : ''}
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.remove-member-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> removeWorkspaceMember(btn.dataset.email));
+    });
+
+    if(owner && ownerAddWrap) ownerAddWrap.style.display = '';
+
+    if(owner && workspaceRequests.length){
+      requestsWrap.style.display = '';
+      requestsList.innerHTML = workspaceRequests.map(r => `
+        <div class="join-request-item">
+          <div class="join-request-email">${escapeHtml(r.email || r.id)}</div>
+          <div class="join-request-actions">
+            <button class="btn btn-primary approve-join-btn" type="button" data-id="${escapeHtml(r.id)}" data-email="${escapeHtml(r.email || '')}">Approve</button>
+            <button class="btn btn-ghost reject-join-btn" type="button" data-id="${escapeHtml(r.id)}" data-email="${escapeHtml(r.email || '')}">Reject</button>
+          </div>
+        </div>
+      `).join('');
+
+      requestsList.querySelectorAll('.approve-join-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=> approveWorkspaceJoin(btn.dataset.id, btn.dataset.email));
+      });
+      requestsList.querySelectorAll('.reject-join-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=> rejectWorkspaceJoin(btn.dataset.id, btn.dataset.email));
+      });
+    }
+  }else if(workspaceAccessState === 'not-found'){
+    statusEl.style.display = 'block';
+    statusEl.textContent = "This sync group doesn't exist yet. Create it to become its owner.";
+    createBtn.style.display = '';
+  }else if(workspaceAccessState === 'not-member'){
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'You are not a member of this sync group.';
+    joinWrap.style.display = '';
+
+    const pending = workspaceJoinRequest && workspaceJoinRequest.status === 'pending';
+    const rejected = workspaceJoinRequest && workspaceJoinRequest.status === 'rejected';
+
+    if(pending){
+      joinStatus.textContent = 'Your join request is pending. The group owner must approve it.';
+      requestJoinBtn.textContent = 'Request pending';
+      requestJoinBtn.disabled = true;
+    }else if(rejected){
+      joinStatus.textContent = 'Your previous request was rejected. You can send a new request.';
+      requestJoinBtn.textContent = 'Request to join again';
+      requestJoinBtn.disabled = false;
+    }else{
+      joinStatus.textContent = 'You are not a member. Send a join request to the group owner.';
+      requestJoinBtn.textContent = 'Request to join';
+      requestJoinBtn.disabled = false;
+    }
+  }else if(workspaceAccessState === 'error'){
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Could not check access to this sync group.';
+  }else{
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Checking access…';
+  }
 }
 
 function scheduleFirebaseSync(){
-  if(!firebaseReady || !firebaseUser || !navigator.onLine) return;
+
+  if(!firebaseReady || !firebaseUser || workspaceAccessState !== 'member' || !navigator.onLine) return;
   clearTimeout(firebaseSyncTimer);
   firebaseSyncTimer = setTimeout(()=>{ pushToFirebase(); }, 900);
 }
@@ -1237,7 +1646,7 @@ async function applyFirebaseData(data, toast=false){
   await saveCustomers(false);
   const ts = data.updatedAt || Date.now();
   try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(ts)); }catch(e){}
-  try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
+  try{ localStorage.setItem(firebaseLastSyncKey(), String(Date.now())); }catch(e){}
   renderAll();
   if(toast) showToast('Latest data loaded from Firebase');
 }
@@ -1274,10 +1683,10 @@ function mergeRecords(remoteList, localList){
 }
 
 function migrationComplete(){
-  try{ return localStorage.getItem(FIREBASE_MIGRATION_KEY) === '1'; }catch(e){ return false; }
+  try{ return localStorage.getItem(firebaseMigrationKey()) === '1'; }catch(e){ return false; }
 }
 function markMigrationComplete(){
-  try{ localStorage.setItem(FIREBASE_MIGRATION_KEY, '1'); }catch(e){}
+  try{ localStorage.setItem(firebaseMigrationKey(), '1'); }catch(e){}
 }
 
 function attachFirebaseListener(){
@@ -1315,7 +1724,7 @@ function attachFirebaseListener(){
           await saveSales(false);
           await saveCustomers(false);
           try{ localStorage.setItem(LOCAL_UPDATED_KEY, String(merged.updatedAt)); }catch(e){}
-          try{ localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now())); }catch(e){}
+          try{ localStorage.setItem(firebaseLastSyncKey(), String(Date.now())); }catch(e){}
           markMigrationComplete();
           clearLocalDirty();
           renderAll();
@@ -1361,7 +1770,7 @@ function attachFirebaseListener(){
 }
 
 async function pushToFirebase(force=false){
-  if(!firebaseReady || !firebaseUser || (!navigator.onLine && !force)) return;
+  if(!firebaseReady || !firebaseUser || workspaceAccessState !== 'member' || (!navigator.onLine && !force)) return;
   renderFirebaseStatus('syncing');
   firebaseWriteInProgress = true;
   try{
@@ -1372,7 +1781,7 @@ async function pushToFirebase(force=false){
       updatedAtServer: firebase.firestore.FieldValue.serverTimestamp(),
       schemaVersion: 2
     }, {merge:false});
-    localStorage.setItem(FIREBASE_LAST_SYNC_KEY, String(Date.now()));
+    localStorage.setItem(firebaseLastSyncKey(), String(Date.now()));
     clearLocalDirty();
     renderFirebaseStatus('synced');
   }catch(e){
@@ -1420,7 +1829,14 @@ async function createFirebaseAccount(){
 }
 
 async function signOutFirebase(){
-  try{ await firebase.auth().signOut(); }catch(e){ console.error(e); }
+  try{
+    if(workspaceJoinRequestUnsubscribe){ workspaceJoinRequestUnsubscribe(); workspaceJoinRequestUnsubscribe = null; }
+    if(workspaceRequestsUnsubscribe){ workspaceRequestsUnsubscribe(); workspaceRequestsUnsubscribe = null; }
+    workspaceJoinRequest = null;
+    workspaceRequests = [];
+    workspaceOwnerEmail = null;
+    await firebase.auth().signOut();
+  }catch(e){ console.error(e); }
 }
 
 function renderFirebaseStatus(state){
@@ -1431,6 +1847,8 @@ function renderFirebaseStatus(state){
   if(!isFirebaseConfigured()){ text.textContent = 'Cloud: setup required'; return; }
   if(!firebaseReady){ text.textContent = 'Cloud: loading…'; return; }
   if(!firebaseUser){ text.textContent = 'Cloud: not signed in'; return; }
+  if(workspaceAccessState === 'not-member'){ pill.classList.add('error'); text.textContent = 'Cloud: no access to this group'; return; }
+  if(workspaceAccessState === 'not-found'){ text.textContent = 'Cloud: sync group not found'; return; }
   if(!navigator.onLine){ pill.classList.add('offline'); text.textContent = 'Cloud: offline (will sync)'; return; }
   if(state === 'syncing'){ pill.classList.add('syncing'); text.textContent = 'Cloud: syncing…'; return; }
   if(state === 'error'){ pill.classList.add('error'); text.textContent = 'Cloud: sync failed'; return; }
@@ -1461,11 +1879,16 @@ async function initFirebaseUI(){
         signOutBtn.style.display = '';
         syncBtn.style.display = '';
         document.getElementById('saveHint').textContent = `Changes save automatically and sync across devices (${user.email || 'signed in'}).`;
-        attachFirebaseListener();
+        attachWorkspaceMetaListener();
         renderFirebaseStatus('syncing');
       }else{
         if(firebaseUnsubscribe) firebaseUnsubscribe();
         firebaseUnsubscribe = null;
+        if(workspaceMetaUnsubscribe) workspaceMetaUnsubscribe();
+        workspaceMetaUnsubscribe = null;
+        workspaceAccessState = 'unknown';
+        workspaceMembers = [];
+        renderWorkspaceAccessUI();
         form.style.display = '';
         signOutBtn.style.display = 'none';
         syncBtn.style.display = 'none';
@@ -1486,6 +1909,27 @@ document.getElementById('firebaseCreateBtn')?.addEventListener('click', createFi
 document.getElementById('firebaseSyncNowBtn')?.addEventListener('click', async ()=>{ await pushToFirebase(true); });
 document.getElementById('firebaseSignOutBtn')?.addEventListener('click', signOutFirebase);
 document.getElementById('firebasePassword')?.addEventListener('keydown', e=>{ if(e.key==='Enter') signInFirebase(); });
+document.getElementById('workspaceSaveBtn')?.addEventListener('click', ()=>{
+  switchWorkspace(document.getElementById('workspaceIdInput').value);
+});
+document.getElementById('workspaceIdInput')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter') switchWorkspace(e.target.value);
+});
+document.getElementById('workspaceCreateBtn')?.addEventListener('click', createWorkspace);
+document.getElementById('workspaceRequestJoinBtn')?.addEventListener('click', requestWorkspaceJoin);
+
+document.getElementById('workspaceAddMemberBtn')?.addEventListener('click', ()=>{
+  const input = document.getElementById('workspaceAddMemberInput');
+  addWorkspaceMember(input.value);
+  input.value = '';
+});
+document.getElementById('workspaceAddMemberInput')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter'){
+    addWorkspaceMember(e.target.value);
+    e.target.value = '';
+  }
+});
+renderWorkspaceUI();
 window.addEventListener('online', ()=>{ renderFirebaseStatus(); scheduleFirebaseSync(); });
 window.addEventListener('offline', ()=>{ renderFirebaseStatus(); });
 
@@ -2074,7 +2518,6 @@ document.getElementById('addProductBtn').addEventListener('click', async ()=>{
   renderAll();
   await initFirebaseUI();
   renderFirebaseStatus();
-  if(firebaseReady && firebaseUser) attachFirebaseListener();
 })();
 </script>
 
