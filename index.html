@@ -1295,17 +1295,7 @@ let workspaceJoinRequestUnsubscribe = null;
 let workspaceRequestsUnsubscribe = null;
 let workspaceMembers = [];
 let workspaceOwnerEmail = null;
-      workspaceOwnerUid = data.ownerUid || '';
-      if (!workspaceOwnerUid && firebaseUser?.email && workspaceOwnerEmail &&
-          workspaceOwnerEmail.toLowerCase() === firebaseUser.email.toLowerCase()) {
-        workspaceOwnerUid = firebaseUser.uid;
-        try {
-          await workspaceMetaRef().update({ ownerUid: firebaseUser.uid });
-        } catch (e) {
-          console.warn('Could not migrate workspace ownerUid:', e);
-        }
-      }
-
+let workspaceOwnerUid = null;
 let workspaceJoinRequest = null;
 let workspaceRequests = [];
 let workspaceAccessState = 'unknown'; // unknown | member | not-member | not-found | error
@@ -1388,7 +1378,7 @@ function attachWorkspaceMetaListener(){
   workspaceRequests = [];
   renderWorkspaceAccessUI();
 
-  workspaceMetaUnsubscribe = workspaceMetaRef().onSnapshot(snap=>{
+  workspaceMetaUnsubscribe = workspaceMetaRef().onSnapshot(async snap=>{
     if(!snap.exists){
       workspaceAccessState = 'not-found';
       workspaceMembers = [];
@@ -1401,6 +1391,17 @@ function attachWorkspaceMetaListener(){
     const data = snap.data() || {};
     workspaceMembers = Array.isArray(data.members) ? data.members : [];
     workspaceOwnerEmail = data.ownerEmail ? String(data.ownerEmail).toLowerCase() : null;
+
+    workspaceOwnerUid = data.ownerUid || '';
+    if (!workspaceOwnerUid && firebaseUser?.email && workspaceOwnerEmail &&
+        workspaceOwnerEmail.toLowerCase() === firebaseUser.email.toLowerCase()) {
+      workspaceOwnerUid = firebaseUser.uid;
+      try {
+        await workspaceMetaRef().update({ ownerUid: firebaseUser.uid });
+      } catch (e) {
+        console.warn('Could not migrate workspace ownerUid:', e);
+      }
+    }
 
     const email = currentUserEmail();
     const isMember = !!email && workspaceMembers.map(m=>String(m).toLowerCase()).includes(email);
