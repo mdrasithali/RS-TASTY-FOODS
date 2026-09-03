@@ -815,7 +815,7 @@
       </div>
       <div class="field grow">
         <label for="saleProduct">Product</label>
-        <select id="saleProduct"><option value="p0">Santhanam Soap</option><option value="p1">Kuppaimeni Soap</option><option value="p2">Thengai ennai Soap</option><option value="p3">Naattu sarkarai</option><option value="p4">Karupatti 250g</option><option value="p5">Panankarkandu 250g</option><option value="p6">Vellam 500g</option><option value="p7">Thengai ennai 200ml</option><option value="p8">Thengai ennai 500ml</option><option value="p9">Nallennai 500ml</option><option value="p10">Kadalai ennai 500ml</option><option value="p11">Poosu Manjal 50g</option><option value="p12">Kulambu Manjal 50g</option><option value="p13">Beetroot Malt</option><option value="p14">Uppu</option><option value="p15">Satthu Maavu 250g</option><option value="p16">Biryani Masala 50g</option><option value="p17">Karuppu Kavuni Kali Maavu 250g</option><option value="p18">Karuppu Ulunthu Kali Maavu 250g</option></select>
+        <select id="saleProduct"><option value="">No products available — add a product first</option></select>
       </div>
       <div class="field grow">
         <label for="saleCustomer">Customer</label>
@@ -840,7 +840,7 @@
     <div id="frontUnpaidWrap" class="front-unpaid-wrap" style="display:none;"></div>
     <div class="preview" id="salePreview">
     <div id="frontUnpaidWrap" class="front-unpaid-wrap" style="display:none;"></div>
-1 × Santhanam Soap → Revenue <b>₹120</b> · Cost <b>₹90</b> · Profit <b>₹30</b></div>
+No product selected yet.</div>
 
     <h3 style="font-family:'Fraunces',serif; font-weight:600; color:var(--indigo); margin:30px 0 12px;">Profit by product</h3>
     <div id="breakdownWrap"><div class="empty">No sales logged yet. Once you add sales, profit per product shows up here.</div></div>
@@ -888,179 +888,20 @@
   </section>
 
   <section class="panel" id="panel-products">
-    <div id="productsWrap"><table>
-    <thead><tr>
-      <th>Product</th><th class="num">Cost</th><th class="num">Courier</th>
-      <th class="num">Total Cost</th><th class="num">Selling Price</th>
-      <th class="num">Profit/Unit</th><th></th>
-    </tr></thead>
-    <tbody><tr data-pid="p0">
-        <td class="name"><input type="text" class="name-field" data-pid="p0" value="Santhanam Soap"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p0" value="80"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p0" value="10"></td>
-        <td class="num">₹90</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p0" value="120"></td>
-        <td class="num profit-pos">₹30</td>
-        <td><button class="btn-danger-text" data-del-pid="p0">Remove</button></td>
-      </tr><tr data-pid="p1">
-        <td class="name"><input type="text" class="name-field" data-pid="p1" value="Kuppaimeni Soap"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p1" value="80"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p1" value="10"></td>
-        <td class="num">₹90</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p1" value="120"></td>
-        <td class="num profit-pos">₹30</td>
-        <td><button class="btn-danger-text" data-del-pid="p1">Remove</button></td>
-      </tr><tr data-pid="p2">
-        <td class="name"><input type="text" class="name-field" data-pid="p2" value="Thengai ennai Soap"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p2" value="80"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p2" value="5"></td>
-        <td class="num">₹85</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p2" value="100"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p2">Remove</button></td>
-      </tr><tr data-pid="p3">
-        <td class="name"><input type="text" class="name-field" data-pid="p3" value="Naattu sarkarai"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p3" value="47"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p3" value="10"></td>
-        <td class="num">₹57</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p3" value="70"></td>
-        <td class="num profit-pos">₹13</td>
-        <td><button class="btn-danger-text" data-del-pid="p3">Remove</button></td>
-      </tr><tr data-pid="p4">
-        <td class="name"><input type="text" class="name-field" data-pid="p4" value="Karupatti 250g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p4" value="130"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p4" value="5"></td>
-        <td class="num">₹135</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p4" value="150"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p4">Remove</button></td>
-      </tr><tr data-pid="p5">
-        <td class="name"><input type="text" class="name-field" data-pid="p5" value="Panankarkandu 250g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p5" value="150"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p5" value="5"></td>
-        <td class="num">₹155</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p5" value="200"></td>
-        <td class="num profit-pos">₹45</td>
-        <td><button class="btn-danger-text" data-del-pid="p5">Remove</button></td>
-      </tr><tr data-pid="p6">
-        <td class="name"><input type="text" class="name-field" data-pid="p6" value="Vellam 500g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p6" value="40"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p6" value="5"></td>
-        <td class="num">₹45</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p6" value="60"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p6">Remove</button></td>
-      </tr><tr data-pid="p7">
-        <td class="name"><input type="text" class="name-field" data-pid="p7" value="Thengai ennai 200ml"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p7" value="90"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p7" value="5"></td>
-        <td class="num">₹95</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p7" value="110"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p7">Remove</button></td>
-      </tr><tr data-pid="p8">
-        <td class="name"><input type="text" class="name-field" data-pid="p8" value="Thengai ennai 500ml"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p8" value="200"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p8" value="5"></td>
-        <td class="num">₹205</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p8" value="260"></td>
-        <td class="num profit-pos">₹55</td>
-        <td><button class="btn-danger-text" data-del-pid="p8">Remove</button></td>
-      </tr><tr data-pid="p9">
-        <td class="name"><input type="text" class="name-field" data-pid="p9" value="Nallennai 500ml"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p9" value="200"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p9" value="5"></td>
-        <td class="num">₹205</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p9" value="250"></td>
-        <td class="num profit-pos">₹45</td>
-        <td><button class="btn-danger-text" data-del-pid="p9">Remove</button></td>
-      </tr><tr data-pid="p10">
-        <td class="name"><input type="text" class="name-field" data-pid="p10" value="Kadalai ennai 500ml"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p10" value="165"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p10" value="5"></td>
-        <td class="num">₹170</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p10" value="200"></td>
-        <td class="num profit-pos">₹30</td>
-        <td><button class="btn-danger-text" data-del-pid="p10">Remove</button></td>
-      </tr><tr data-pid="p11">
-        <td class="name"><input type="text" class="name-field" data-pid="p11" value="Poosu Manjal 50g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p11" value="40"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p11" value="5"></td>
-        <td class="num">₹45</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p11" value="60"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p11">Remove</button></td>
-      </tr><tr data-pid="p12">
-        <td class="name"><input type="text" class="name-field" data-pid="p12" value="Kulambu Manjal 50g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p12" value="40"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p12" value="5"></td>
-        <td class="num">₹45</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p12" value="60"></td>
-        <td class="num profit-pos">₹15</td>
-        <td><button class="btn-danger-text" data-del-pid="p12">Remove</button></td>
-      </tr><tr data-pid="p13">
-        <td class="name"><input type="text" class="name-field" data-pid="p13" value="Beetroot Malt"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p13" value="230"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p13" value="5"></td>
-        <td class="num">₹235</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p13" value="290"></td>
-        <td class="num profit-pos">₹55</td>
-        <td><button class="btn-danger-text" data-del-pid="p13">Remove</button></td>
-      </tr><tr data-pid="p14">
-        <td class="name"><input type="text" class="name-field" data-pid="p14" value="Uppu"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p14" value="20"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p14" value="5"></td>
-        <td class="num">₹25</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p14" value="35"></td>
-        <td class="num profit-pos">₹10</td>
-        <td><button class="btn-danger-text" data-del-pid="p14">Remove</button></td>
-      </tr><tr data-pid="p15">
-        <td class="name"><input type="text" class="name-field" data-pid="p15" value="Satthu Maavu 250g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p15" value="70"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p15" value="10"></td>
-        <td class="num">₹80</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p15" value="150"></td>
-        <td class="num profit-pos">₹70</td>
-        <td><button class="btn-danger-text" data-del-pid="p15">Remove</button></td>
-      </tr><tr data-pid="p16">
-        <td class="name"><input type="text" class="name-field" data-pid="p16" value="Biryani Masala 50g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p16" value="50"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p16" value="10"></td>
-        <td class="num">₹60</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p16" value="100"></td>
-        <td class="num profit-pos">₹40</td>
-        <td><button class="btn-danger-text" data-del-pid="p16">Remove</button></td>
-      </tr><tr data-pid="p17">
-        <td class="name"><input type="text" class="name-field" data-pid="p17" value="Karuppu Kavuni Kali Maavu 250g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p17" value="50"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p17" value="10"></td>
-        <td class="num">₹60</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p17" value="120"></td>
-        <td class="num profit-pos">₹60</td>
-        <td><button class="btn-danger-text" data-del-pid="p17">Remove</button></td>
-      </tr><tr data-pid="p18">
-        <td class="name"><input type="text" class="name-field" data-pid="p18" value="Karuppu Ulunthu Kali Maavu 250g"></td>
-        <td class="num"><input type="number" class="price-input cost-field" data-pid="p18" value="50"></td>
-        <td class="num"><input type="number" class="price-input courier-field" data-pid="p18" value="10"></td>
-        <td class="num">₹60</td>
-        <td class="num"><input type="number" class="price-input price-field" data-pid="p18" value="120"></td>
-        <td class="num profit-pos">₹60</td>
-        <td><button class="btn-danger-text" data-del-pid="p18">Remove</button></td>
-      </tr></tbody>
-  </table></div>
     <div class="add-row">
-      <input type="text" id="newProdName" placeholder="New product name">
-      <input type="number" id="newProdCost" placeholder="Product cost" style="max-width:130px;">
-      <input type="number" id="newProdCourier" placeholder="Courier/sticker cost" style="max-width:150px;">
+      <input type="text" id="newProdName" placeholder="Product name">
+      <input type="number" id="newProdCost" placeholder="Cost" min="0" step="0.01">
+      <input type="number" id="newProdCourier" placeholder="Courier" min="0" step="0.01">
       <button class="btn btn-ghost" id="addProductBtn">+ Add product</button>
     </div>
-    <p class="note">Selling price defaults to your cost when you add a product — edit it in the table above so profit isn't zero.</p>
+    <div class="note">No products added yet. Add a product above to start recording sales.</div>
+    <div id="productsWrap" style="margin-top:16px;"><div class="empty">Product list is empty.</div></div>
   </section>
 </div>
 
 <div class="toast" id="toast">Product updated</div>
 
-<script type="application/json" id="seed-data">{"products":[{"id":"p0","name":"Santhanam Soap","cost":80,"courier":10,"price":120},{"id":"p1","name":"Kuppaimeni Soap","cost":80,"courier":10,"price":120},{"id":"p2","name":"Thengai ennai Soap","cost":80,"courier":5,"price":100},{"id":"p3","name":"Naattu sarkarai","cost":47,"courier":10,"price":70},{"id":"p4","name":"Karupatti 250g","cost":130,"courier":5,"price":150},{"id":"p5","name":"Panankarkandu 250g","cost":150,"courier":5,"price":200},{"id":"p6","name":"Vellam 500g","cost":40,"courier":5,"price":60},{"id":"p7","name":"Thengai ennai 200ml","cost":90,"courier":5,"price":110},{"id":"p8","name":"Thengai ennai 500ml","cost":200,"courier":5,"price":260},{"id":"p9","name":"Nallennai 500ml","cost":200,"courier":5,"price":250},{"id":"p10","name":"Kadalai ennai 500ml","cost":165,"courier":5,"price":200},{"id":"p11","name":"Poosu Manjal 50g","cost":40,"courier":5,"price":60},{"id":"p12","name":"Kulambu Manjal 50g","cost":40,"courier":5,"price":60},{"id":"p13","name":"Beetroot Malt","cost":230,"courier":5,"price":290},{"id":"p14","name":"Uppu","cost":20,"courier":5,"price":35},{"id":"p15","name":"Satthu Maavu 250g","cost":70,"courier":10,"price":150},{"id":"p16","name":"Biryani Masala 50g","cost":50,"courier":10,"price":100},{"id":"p17","name":"Karuppu Kavuni Kali Maavu 250g","cost":50,"courier":10,"price":120},{"id":"p18","name":"Karuppu Ulunthu Kali Maavu 250g","cost":50,"courier":10,"price":120}],"sales":[]}</script>
+<script type="application/json" id="seed-data">{"products":[],"sales":[]}</script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -1108,15 +949,8 @@ function timeAgo(timestamp){
   return new Date(t).toLocaleDateString();
 }
 
-const DEFAULT_PRODUCTS = [
-  ["Santhanam Soap",80,10,120],["Kuppaimeni Soap",80,10,120],["Thengai ennai Soap",80,5,100],
-  ["Naattu sarkarai",47,10,70],["Karupatti 250g",130,5,150],["Panankarkandu 250g",150,5,200],
-  ["Vellam 500g",40,5,60],["Thengai ennai 200ml",90,5,110],["Thengai ennai 500ml",200,5,260],
-  ["Nallennai 500ml",200,5,250],["Kadalai ennai 500ml",165,5,200],["Poosu Manjal 50g",40,5,60],
-  ["Kulambu Manjal 50g",40,5,60],["Beetroot Malt",230,5,290],["Uppu",20,5,35],
-  ["Satthu Maavu 250g",70,10,150],["Biryani Masala 50g",50,10,100],
-  ["Karuppu Kavuni Kali Maavu",50,10,120],["Ulunthan Kali Maavu",50,10,120]
-].map((p,i)=>({id:'p'+i, name:p[0], cost:p[1], courier:p[2], price:p[3]}));
+const DEFAULT_PRODUCTS = [];
+const oldBuiltInProductIds = new Set(['p0','p1','p2','p3','p4','p5','p6','p7','p8','p9','p10','p11','p12','p13','p14','p15','p16','p17','p18']);
 
 let products = [];
 let sales = [];
