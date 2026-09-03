@@ -711,11 +711,9 @@
             <span class="dot"></span><span id="cloudPillText">Cloud: not connected</span>
           </button>
           <div class="cloud-panel" id="cloudPanel">
-            <p class="cloud-note">Sign in with Google to sync products, sales and customers across devices. Email/password remains available as a backup.</p>
+            <p class="cloud-note">Sign in with your email and password to sync products, sales and customers across devices.</p>
             <div id="firebaseAuthForm">
               <div id="firebaseError" style="display:none; margin:0 0 8px; padding:8px; border-radius:8px; font-size:12px; background:#fff3f3; color:#b42318;"></div>
-              <button class="btn btn-primary" id="firebaseGoogleBtn" type="button" style="width:100%; margin-bottom:8px;">Continue with Google</button>
-              <div style="font-size:10px; text-align:center; color:var(--ink-soft); margin:2px 0 8px;">or use email/password</div>
               <input id="firebaseEmail" type="email" autocomplete="email" placeholder="Email address" style="width:100%; margin:0 0 7px;">
               <input id="firebasePassword" type="password" autocomplete="current-password" placeholder="Password (6+ characters)" style="width:100%; margin:0 0 8px;">
               <div class="cloud-actions">
@@ -1157,7 +1155,7 @@ async function saveCustomers(sync=true){ await storageSet(STORAGE_CUSTOMERS, JSO
 })();
 
 // ---------- Firebase Firestore cloud sync ----------
-// Firebase Authentication supports Google OAuth and email/password.
+// Firebase Authentication (email/password).
 // Firestore keeps one app document per signed-in user and onSnapshot provides
 // real-time sync between devices.
 //
@@ -1180,27 +1178,17 @@ let firebaseUser = null;
 let firebaseUnsubscribe = null;
 let firebaseSyncTimer = null;
 let firebaseWriteInProgress = false;
-let firebaseGoogleProvider = null;
-let firebaseRedirectChecked = false;
-
-function isEmbeddedWebView(){
-  const ua = navigator.userAgent || '';
-  return /; wv\)|\bwv\b|WebView/i.test(ua) || (window.Android && !/Chrome\//i.test(ua));
-}
 
 function friendlyFirebaseAuthError(e){
   const code = e && e.code ? e.code : '';
   const message = e && e.message ? e.message : '';
   const map = {
-    'auth/popup-closed-by-user':'Google sign-in was cancelled.',
-    'auth/popup-blocked':'The Google sign-in window was blocked. Please allow pop-ups and try again.',
     'auth/unauthorized-domain':'This website is not authorized in Firebase. Add its domain under Firebase Authentication → Settings → Authorized domains.',
-    'auth/operation-not-allowed':'Google sign-in is not enabled. Enable Google under Firebase Authentication → Sign-in method.',
     'auth/account-exists-with-different-credential':'An account already exists with the same email using another sign-in method.',
     'auth/network-request-failed':'Network error. Check your internet connection and try again.',
     'auth/invalid-api-key':'The Firebase API key is invalid. Check the Firebase Web App configuration.'
   };
-  return map[code] || message || 'Google sign-in failed.';
+  return map[code] || message || 'Sign-in failed.';
 }
 
 
@@ -1414,38 +1402,6 @@ async function signInFirebase(){
   }
 }
 
-async function signInWithGoogle(){
-  if(!firebaseReady){ showFirebaseError('Firebase is not ready. Check that the Firebase scripts loaded.'); showToast('Firebase is not ready'); return; }
-  try{
-    clearFirebaseError();
-    if(isEmbeddedWebView()){
-      const msg = 'Google sign-in cannot run inside this WebToAPK WebView. Open the GitHub Pages website in Chrome/another browser, sign in once, then return to the app.';
-      showFirebaseError(msg);
-      showToast('Open the website in Chrome for Google sign-in');
-      return;
-    }
-    if(!firebaseGoogleProvider) firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
-    firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
-    await firebase.auth().signInWithPopup(firebaseGoogleProvider);
-  }catch(e){
-    console.error('Google sign-in failed', e);
-    // If popup is unavailable, use Firebase redirect flow in a normal browser.
-    if(e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')){
-      try{
-        if(!firebaseGoogleProvider) firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
-        firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
-        await firebase.auth().signInWithRedirect(firebaseGoogleProvider);
-        return;
-      }catch(redirectError){
-        e = redirectError;
-      }
-    }
-    const msg = friendlyFirebaseAuthError(e);
-    showFirebaseError(msg);
-    showToast(msg);
-  }
-}
-
 async function createFirebaseAccount(){
   if(!firebaseReady){ showFirebaseError('Firebase is not ready. Check that the Firebase scripts loaded.'); showToast('Firebase is not ready'); return; }
   const email = document.getElementById('firebaseEmail').value.trim();
@@ -1494,20 +1450,9 @@ async function initFirebaseUI(){
   try{
     if(!window.firebase || !firebase.apps){ throw new Error('Firebase scripts did not load.'); }
     if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    firebaseGoogleProvider = new firebase.auth.GoogleAuthProvider();
-    firebaseGoogleProvider.setCustomParameters({prompt:'select_account'});
     await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
     firebase.firestore().enablePersistence({synchronizeTabs:true}).catch(e=>{ console.warn('Firestore persistence unavailable:', e && e.code, e && e.message); });
     firebaseReady = true;
-
-    // Complete a Google sign-in that used redirect mode.
-    if(!firebaseRedirectChecked){
-      firebaseRedirectChecked = true;
-      try{ await firebase.auth().getRedirectResult(); }catch(e){
-        console.error('Google redirect result failed', e);
-        showFirebaseError(friendlyFirebaseAuthError(e));
-      }
-    }
 
     firebase.auth().onAuthStateChanged(user=>{
       firebaseUser = user;
@@ -1515,7 +1460,7 @@ async function initFirebaseUI(){
         form.style.display = 'none';
         signOutBtn.style.display = '';
         syncBtn.style.display = '';
-        document.getElementById('saveHint').textContent = `Changes save automatically and sync across devices (${user.email || 'Google account'}).`;
+        document.getElementById('saveHint').textContent = `Changes save automatically and sync across devices (${user.email || 'signed in'}).`;
         attachFirebaseListener();
         renderFirebaseStatus('syncing');
       }else{
@@ -1536,7 +1481,6 @@ async function initFirebaseUI(){
   }
 }
 
-document.getElementById('firebaseGoogleBtn')?.addEventListener('click', signInWithGoogle);
 document.getElementById('firebaseSignInBtn')?.addEventListener('click', signInFirebase);
 document.getElementById('firebaseCreateBtn')?.addEventListener('click', createFirebaseAccount);
 document.getElementById('firebaseSyncNowBtn')?.addEventListener('click', async ()=>{ await pushToFirebase(true); });
